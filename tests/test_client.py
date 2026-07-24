@@ -14,6 +14,8 @@ def test_sync_client_context_manager_closes_transport() -> None:
     assert not client.is_closed
     with client as active_client:
         assert active_client is client
+        assert active_client.cdn.domains is not None
+        assert active_client.cdn.dns_records is not None
         assert not active_client.is_closed
 
     assert client.is_closed
@@ -26,6 +28,8 @@ async def test_async_client_context_manager_closes_transport() -> None:
     assert not client.is_closed
     async with client as active_client:
         assert active_client is client
+        assert active_client.cdn.domains is not None
+        assert active_client.cdn.dns_records is not None
         assert not active_client.is_closed
 
     assert client.is_closed
@@ -40,6 +44,7 @@ def test_config_normalizes_base_urls() -> None:
     assert config.auth_base_url == "https://auth.example.test"
     assert config.cdn_base_url == "https://cdn.example.test"
     assert config.auth_url("/v1/auth/login") == "https://auth.example.test/v1/auth/login"
+    assert config.cdn_url("/domains") == "https://cdn.example.test/domains"
 
 
 @pytest.mark.parametrize(

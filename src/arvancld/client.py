@@ -7,6 +7,7 @@ from types import TracebackType
 
 from arvancld._transport import AsyncTransport, SyncTransport
 from arvancld.auth.service import AsyncAuthService, AuthService
+from arvancld.cdn.service import AsyncCDNService, CDNService
 from arvancld.config import (
     DEFAULT_AUTH_BASE_URL,
     DEFAULT_CDN_BASE_URL,
@@ -38,6 +39,7 @@ class ArvanCloud:
         )
         self._transport = SyncTransport(self.config)
         self.auth = AuthService(self._transport, self.config)
+        self.cdn = CDNService(self._transport, self.config, self.auth)
 
     @property
     def is_closed(self) -> bool:
@@ -83,6 +85,7 @@ class AsyncArvanCloud:
         )
         self._transport = AsyncTransport(self.config)
         self.auth = AsyncAuthService(self._transport, self.config)
+        self.cdn = AsyncCDNService(self._transport, self.config, self.auth)
 
     @property
     def is_closed(self) -> bool:

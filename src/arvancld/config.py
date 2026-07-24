@@ -50,3 +50,8 @@ class ClientConfig:
         """Build an absolute URL for the account authentication service."""
 
         return f"{self.auth_base_url}/{path.lstrip('/')}"
+
+    def cdn_url(self, path: str) -> str:
+        """Build an absolute URL for the CDN service."""
+
+        return f"{self.cdn_base_url}/{path.lstrip('/')}"

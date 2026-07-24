@@ -31,6 +31,10 @@ class AuthenticationError(APIError):
     """Authentication was rejected by the remote API."""
 
 
+class AuthenticationRequiredError(ArvanCloudError):
+    """A request requires a prior successful login."""
+
+
 class NetworkError(ArvanCloudError):
     """The request could not reach the remote API."""
 

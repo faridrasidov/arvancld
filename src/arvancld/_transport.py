@@ -76,10 +76,17 @@ class SyncTransport:
         *,
         model: type[ModelT],
         json: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> ModelT:
         try:
-            response = self._client.request(method, url, json=json, headers=headers)
+            response = self._client.request(
+                method,
+                url,
+                json=json,
+                params=params,
+                headers=headers,
+            )
         except httpx.TimeoutException:
             raise ArvanCloudTimeoutError("ArvanCloud API request timed out") from None
         except httpx.RequestError:
@@ -114,10 +121,17 @@ class AsyncTransport:
         *,
         model: type[ModelT],
         json: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> ModelT:
         try:
-            response = await self._client.request(method, url, json=json, headers=headers)
+            response = await self._client.request(
+                method,
+                url,
+                json=json,
+                params=params,
+                headers=headers,
+            )
         except httpx.TimeoutException:
             raise ArvanCloudTimeoutError("ArvanCloud API request timed out") from None
         except httpx.RequestError:

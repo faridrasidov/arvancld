@@ -2,6 +2,7 @@
 """Public package interface for arvancld."""
 
 from arvancld.auth import LoginResult
+from arvancld.cdn import CDNDomain, CDNDomainPage, DNSRecord, DNSRecordPage
 from arvancld.client import ArvanCloud, AsyncArvanCloud
 from arvancld.config import ClientConfig
 from arvancld.exceptions import (
@@ -9,6 +10,7 @@ from arvancld.exceptions import (
     ArvanCloudError,
     ArvanCloudTimeoutError,
     AuthenticationError,
+    AuthenticationRequiredError,
     InvalidResponseError,
     NetworkError,
 )
@@ -22,7 +24,12 @@ __all__ = [
     "ArvanCloudTimeoutError",
     "AsyncArvanCloud",
     "AuthenticationError",
+    "AuthenticationRequiredError",
+    "CDNDomain",
+    "CDNDomainPage",
     "ClientConfig",
+    "DNSRecord",
+    "DNSRecordPage",
     "InvalidResponseError",
     "LoginResult",
     "NetworkError",
