@@ -150,6 +150,12 @@ class DNSRecordCreate(BaseModel):
         return value
 
 
+class DNSRecordUpdate(DNSRecordCreate):
+    """Payload for updating a DNS record."""
+
+    id: UUID
+
+
 class DNSRecord(BaseModel):
     """A DNS record returned by the CDN DNS records endpoint."""
 
@@ -196,6 +202,15 @@ class DNSRecordCreateResponse(BaseModel):
 
 class DNSRecordCloudUpdateResponse(BaseModel):
     """Envelope returned by the DNS record cloud toggle endpoint."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    data: DNSRecord
+    message: str | None = None
+
+
+class DNSRecordUpdateResponse(BaseModel):
+    """Envelope returned by the DNS record update endpoint."""
 
     model_config = ConfigDict(extra="ignore", frozen=True)
 

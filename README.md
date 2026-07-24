@@ -2,7 +2,8 @@
 
 `arvancld` is a typed Python client for ArvanCloud services. The first release
 implements account login plus CDN domain listing, DNS record listing, DNS record
-creation, and DNS cloud proxy toggling with synchronous and asynchronous clients.
+creation, DNS record editing, and DNS cloud proxy toggling with synchronous and
+asynchronous clients.
 
 ## Requirements
 
@@ -162,13 +163,61 @@ with ArvanCloud() as client:
     print(record.cloud)
 ```
 
+## CDN DNS record editing
+
+```python
+import os
+from uuid import UUID
+
+from arvancld import ArvanCloud, DNSRecordIPValue, DNSRecordUpdate, IPFilterMode
+
+with ArvanCloud() as client:
+    client.auth.login(
+        email=os.environ["ARVANCLD_EMAIL"],
+        password=os.environ["ARVANCLD_PASSWORD"],
+    )
+
+    record = client.cdn.dns_records.update(
+        os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
+        DNSRecordUpdate(
+            id=UUID(os.environ["ARVANCLD_RECORD_ID"]),
+            type="A",
+            name="sss",
+            cloud=True,
+            value=[
+                DNSRecordIPValue(
+                    ip=os.environ.get("ARVANCLD_RECORD_IP", "85.5.5.6"),
+                    port=None,
+                    weight=100,
+                    country="",
+                )
+            ],
+            ttl=120,
+            upstream_https="default",
+            ip_filter_mode=IPFilterMode(
+                count="single",
+                order="none",
+                geo_filter="none",
+            ),
+        ),
+    )
+    print(record.updated_at)
+```
+
 ## Asynchronous login
 
 ```python
 import asyncio
 import os
+from uuid import UUID
 
-from arvancld import AsyncArvanCloud, DNSRecordCreate, DNSRecordIPValue, IPFilterMode
+from arvancld import (
+    AsyncArvanCloud,
+    DNSRecordCreate,
+    DNSRecordIPValue,
+    DNSRecordUpdate,
+    IPFilterMode,
+)
 
 
 async def main() -> None:
@@ -198,6 +247,21 @@ async def main() -> None:
             ),
         )
         print(created.id)
+
+        updated = await client.cdn.dns_records.update(
+            os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
+            DNSRecordUpdate(
+                id=UUID(os.environ["ARVANCLD_RECORD_ID"]),
+                type="A",
+                name="sss",
+                cloud=True,
+                value=[DNSRecordIPValue(ip="85.5.5.6", port=None, weight=100, country="")],
+                ttl=120,
+                upstream_https="default",
+                ip_filter_mode=IPFilterMode(count="single", order="none", geo_filter="none"),
+            ),
+        )
+        print(updated.updated_at)
 
         proxied = await client.cdn.dns_records.set_cloud(
             os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
@@ -229,6 +293,8 @@ fingerprints or send browser-only security headers.
 - Access and refresh tokens are held in memory at `client.auth.tokens`.
 - CDN listing calls use the in-memory access token from `client.auth.tokens`.
 - CDN create calls use the same in-memory access token and do not persist new
+  credentials.
+- CDN edit calls use the same in-memory access token and do not persist new
   credentials.
 - CDN cloud proxy toggles use the same in-memory access token and do not persist
   new credentials.

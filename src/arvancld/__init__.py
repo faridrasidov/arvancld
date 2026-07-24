@@ -9,6 +9,7 @@ from arvancld.cdn import (
     DNSRecordCreate,
     DNSRecordIPValue,
     DNSRecordPage,
+    DNSRecordUpdate,
     IPFilterMode,
 )
 from arvancld.client import ArvanCloud, AsyncArvanCloud
@@ -40,6 +41,7 @@ __all__ = [
     "DNSRecordCreate",
     "DNSRecordIPValue",
     "DNSRecordPage",
+    "DNSRecordUpdate",
     "IPFilterMode",
     "InvalidResponseError",
     "LoginResult",

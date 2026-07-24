@@ -16,6 +16,8 @@ from arvancld.cdn.models import (
     DNSRecordCreate,
     DNSRecordCreateResponse,
     DNSRecordPage,
+    DNSRecordUpdate,
+    DNSRecordUpdateResponse,
 )
 from arvancld.config import ClientConfig
 from arvancld.exceptions import AuthenticationRequiredError
@@ -147,6 +149,20 @@ class DNSRecordService:
         )
         return response.data
 
+    def update(self, domain: str, record: DNSRecordUpdate) -> DNSRecord:
+        """Update a DNS record for a CDN domain."""
+
+        domain = quote(_validate_domain(domain), safe=".-")
+        record_id = quote(_validate_record_id(record.id), safe="-")
+        response = self._transport.request_model(
+            "PUT",
+            self._config.cdn_url(f"/domains/{domain}/dns-records/{record_id}/"),
+            model=DNSRecordUpdateResponse,
+            json=record.model_dump(mode="json", by_alias=True),
+            headers=_authorization_header(self._token_provider),
+        )
+        return response.data
+
 
 class CDNService:
     """Synchronous CDN API namespace."""
@@ -242,6 +258,20 @@ class AsyncDNSRecordService:
             self._config.cdn_url(f"/domains/{domain}/dns-records/{record_id}/cloud"),
             model=DNSRecordCloudUpdateResponse,
             json={"cloud": cloud},
+            headers=_authorization_header(self._token_provider),
+        )
+        return response.data
+
+    async def update(self, domain: str, record: DNSRecordUpdate) -> DNSRecord:
+        """Update a DNS record for a CDN domain."""
+
+        domain = quote(_validate_domain(domain), safe=".-")
+        record_id = quote(_validate_record_id(record.id), safe="-")
+        response = await self._transport.request_model(
+            "PUT",
+            self._config.cdn_url(f"/domains/{domain}/dns-records/{record_id}/"),
+            model=DNSRecordUpdateResponse,
+            json=record.model_dump(mode="json", by_alias=True),
             headers=_authorization_header(self._token_provider),
         )
         return response.data
