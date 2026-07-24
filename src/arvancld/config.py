@@ -1,3 +1,4 @@
+# src/arvancld/config.py
 """Client configuration and endpoint defaults."""
 
 from __future__ import annotations

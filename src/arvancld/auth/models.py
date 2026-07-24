@@ -1,3 +1,4 @@
+# src/arvancld/auth/models.py
 """Typed account-authentication response models."""
 
 from __future__ import annotations

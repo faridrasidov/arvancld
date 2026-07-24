@@ -1,3 +1,4 @@
+# src/arvancld/auth/service.py
 """Synchronous and asynchronous account-authentication services."""
 
 from __future__ import annotations

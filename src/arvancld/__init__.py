@@ -1,3 +1,4 @@
+# src/arvancld/__init__.py
 """Public package interface for arvancld."""
 
 from arvancld.auth import LoginResult

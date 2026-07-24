@@ -1,3 +1,4 @@
+# tests/auth/test_login.py
 """Mocked tests for synchronous and asynchronous account login."""
 
 from __future__ import annotations

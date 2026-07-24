@@ -1,3 +1,4 @@
+# examples/login.py
 """Log in synchronously without printing secrets."""
 
 from __future__ import annotations

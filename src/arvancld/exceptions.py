@@ -1,3 +1,4 @@
+# src/arvancld/exceptions.py
 """Stable, credential-safe exceptions raised by arvancld."""
 
 from __future__ import annotations

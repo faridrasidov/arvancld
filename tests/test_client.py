@@ -1,3 +1,4 @@
+# tests/test_client.py
 """Top-level client lifecycle and configuration tests."""
 
 from __future__ import annotations

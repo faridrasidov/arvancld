@@ -1,3 +1,4 @@
+# examples/async_login.py
 """Log in asynchronously without printing secrets."""
 
 from __future__ import annotations

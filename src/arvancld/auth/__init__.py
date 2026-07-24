@@ -1,3 +1,4 @@
+# src/arvancld/auth/__init__.py
 """Account authentication models and services."""
 
 from arvancld.auth.models import LoginResult
