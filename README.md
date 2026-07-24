@@ -1,8 +1,8 @@
 # arvancld
 
 `arvancld` is a typed Python client for ArvanCloud services. The first release
-implements account login plus read-only CDN domain and DNS record listing with
-synchronous and asynchronous clients.
+implements account login plus CDN domain listing, DNS record listing, DNS record
+creation, and DNS cloud proxy toggling with synchronous and asynchronous clients.
 
 ## Requirements
 
@@ -30,6 +30,7 @@ Set credentials outside your source code:
 export ARVANCLD_EMAIL="you@example.com"
 export ARVANCLD_PASSWORD="your-password"
 export ARVANCLD_DOMAIN="snapp.ir"
+export ARVANCLD_RECORD_ID="00000000-0000-4000-8000-000000000001"
 ```
 
 PowerShell:
@@ -38,6 +39,7 @@ PowerShell:
 $env:ARVANCLD_EMAIL = "you@example.com"
 $env:ARVANCLD_PASSWORD = "your-password"
 $env:ARVANCLD_DOMAIN = "snapp.ir"
+$env:ARVANCLD_RECORD_ID = "00000000-0000-4000-8000-000000000001"
 ```
 
 Then log in:
@@ -139,6 +141,27 @@ with ArvanCloud() as client:
     print(record.id)
 ```
 
+## CDN DNS cloud proxy toggle
+
+```python
+import os
+
+from arvancld import ArvanCloud
+
+with ArvanCloud() as client:
+    client.auth.login(
+        email=os.environ["ARVANCLD_EMAIL"],
+        password=os.environ["ARVANCLD_PASSWORD"],
+    )
+
+    record = client.cdn.dns_records.set_cloud(
+        os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
+        os.environ["ARVANCLD_RECORD_ID"],
+        cloud=True,
+    )
+    print(record.cloud)
+```
+
 ## Asynchronous login
 
 ```python
@@ -176,6 +199,13 @@ async def main() -> None:
         )
         print(created.id)
 
+        proxied = await client.cdn.dns_records.set_cloud(
+            os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
+            os.environ["ARVANCLD_RECORD_ID"],
+            cloud=False,
+        )
+        print(proxied.cloud)
+
 
 asyncio.run(main())
 ```
@@ -200,6 +230,8 @@ fingerprints or send browser-only security headers.
 - CDN listing calls use the in-memory access token from `client.auth.tokens`.
 - CDN create calls use the same in-memory access token and do not persist new
   credentials.
+- CDN cloud proxy toggles use the same in-memory access token and do not persist
+  new credentials.
 - Token fields are excluded from model representations.
 - Tokens are not written to disk and refresh is not implemented until the
   refresh endpoint contract is known.

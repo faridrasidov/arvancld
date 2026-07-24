@@ -192,3 +192,12 @@ class DNSRecordCreateResponse(BaseModel):
 
     data: DNSRecord
     message: str | None = None
+
+
+class DNSRecordCloudUpdateResponse(BaseModel):
+    """Envelope returned by the DNS record cloud toggle endpoint."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    data: DNSRecord
+    message: str | None = None

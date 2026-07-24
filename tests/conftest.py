@@ -202,3 +202,35 @@ def dns_record_create_response_payload() -> dict[str, object]:
         },
         "message": "DNS record created successfully.",
     }
+
+
+@pytest.fixture
+def dns_record_cloud_update_response_payload() -> dict[str, object]:
+    return {
+        "data": {
+            "id": "1256bf2b-e19f-448c-8fa2-8a6e83a6acc1",
+            "type": "a",
+            "name": "sss",
+            "value": [
+                {
+                    "ip": "85.5.5.5",
+                    "port": None,
+                    "weight": 100,
+                    "country": "",
+                }
+            ],
+            "ttl": 120,
+            "cloud": True,
+            "upstream_https": "default",
+            "ip_filter_mode": {
+                "count": "single",
+                "order": "none",
+                "geo_filter": "none",
+            },
+            "is_protected": False,
+            "usage": [],
+            "created_at": "2026-07-24T17:35:08+00:00",
+            "updated_at": "2026-07-24T17:40:12+00:00",
+        },
+        "message": "Cloud activated for A record: sss.",
+    }

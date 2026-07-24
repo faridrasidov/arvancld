@@ -5,12 +5,14 @@ from __future__ import annotations
 
 from typing import Protocol
 from urllib.parse import quote
+from uuid import UUID
 
 from arvancld._transport import AsyncTransport, SyncTransport
 from arvancld.auth.models import LoginResult
 from arvancld.cdn.models import (
     CDNDomainPage,
     DNSRecord,
+    DNSRecordCloudUpdateResponse,
     DNSRecordCreate,
     DNSRecordCreateResponse,
     DNSRecordPage,
@@ -38,6 +40,18 @@ def _validate_domain(domain: str) -> str:
         raise ValueError("domain must not be blank")
     if "/" in candidate:
         raise ValueError("domain must not contain '/'")
+    return candidate
+
+
+def _validate_record_id(record_id: UUID | str) -> str:
+    if isinstance(record_id, UUID):
+        return str(record_id)
+
+    candidate = record_id.strip()
+    if not candidate:
+        raise ValueError("record_id must not be blank")
+    if "/" in candidate:
+        raise ValueError("record_id must not contain '/'")
     return candidate
 
 
@@ -115,6 +129,20 @@ class DNSRecordService:
             self._config.cdn_url(f"/domains/{domain}/dns-records"),
             model=DNSRecordCreateResponse,
             json=record.model_dump(mode="json", by_alias=True),
+            headers=_authorization_header(self._token_provider),
+        )
+        return response.data
+
+    def set_cloud(self, domain: str, record_id: UUID | str, *, cloud: bool) -> DNSRecord:
+        """Turn the CDN cloud proxy on or off for a DNS record."""
+
+        domain = quote(_validate_domain(domain), safe=".-")
+        record_id = quote(_validate_record_id(record_id), safe="-")
+        response = self._transport.request_model(
+            "PUT",
+            self._config.cdn_url(f"/domains/{domain}/dns-records/{record_id}/cloud"),
+            model=DNSRecordCloudUpdateResponse,
+            json={"cloud": cloud},
             headers=_authorization_header(self._token_provider),
         )
         return response.data
@@ -200,6 +228,20 @@ class AsyncDNSRecordService:
             self._config.cdn_url(f"/domains/{domain}/dns-records"),
             model=DNSRecordCreateResponse,
             json=record.model_dump(mode="json", by_alias=True),
+            headers=_authorization_header(self._token_provider),
+        )
+        return response.data
+
+    async def set_cloud(self, domain: str, record_id: UUID | str, *, cloud: bool) -> DNSRecord:
+        """Turn the CDN cloud proxy on or off for a DNS record."""
+
+        domain = quote(_validate_domain(domain), safe=".-")
+        record_id = quote(_validate_record_id(record_id), safe="-")
+        response = await self._transport.request_model(
+            "PUT",
+            self._config.cdn_url(f"/domains/{domain}/dns-records/{record_id}/cloud"),
+            model=DNSRecordCloudUpdateResponse,
+            json={"cloud": cloud},
             headers=_authorization_header(self._token_provider),
         )
         return response.data
