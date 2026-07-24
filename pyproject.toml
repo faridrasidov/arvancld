@@ -8,7 +8,35 @@ version = "0.1.0"
 description = "A typed Python client for ArvanCloud services"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { file = "LICENSE" }
 authors = [{ name = "Farid" }]
+keywords = [
+    "arvancloud",
+    "arvan",
+    "cdn",
+    "dns",
+    "dns-records",
+    "sdk",
+    "api-client",
+    "python-sdk",
+    "napi.arvancloud.ir",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: Name Service (DNS)",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 dependencies = [
     "httpx>=0.27,<1",
     "pydantic>=2.8,<3",
@@ -37,4 +65,3 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["B", "E", "F", "I", "RUF", "SIM", "UP"]
-

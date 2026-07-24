@@ -1,9 +1,44 @@
-# arvancld
+# arvancld: ArvanCloud Python SDK for CDN v4.0 and DNS Records
 
-`arvancld` is a typed Python client for ArvanCloud services. The first release
-implements account login plus CDN domain listing, DNS record listing, DNS record
-creation, DNS record editing, DNS record deletion, and DNS cloud proxy toggling
-with synchronous and asynchronous clients.
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Typed: Pydantic v2](https://img.shields.io/badge/typed-Pydantic%20v2-blue)
+![HTTP: httpx](https://img.shields.io/badge/http-httpx-blue)
+
+`arvancld` is a typed Python SDK for ArvanCloud account login and the
+ArvanCloud CDN v4.0 API. It currently implements authenticated access to CDN
+domains and CDN DNS records through `https://napi.arvancloud.ir/cdn/4.0`, with
+both synchronous and asynchronous clients.
+
+Use `arvancld` when you need a Python client for ArvanCloud CDN DNS automation:
+listing domains, listing DNS records, creating DNS records, editing records,
+deleting records, toggling the cloud proxy, and reusing login sessions safely
+between local runs.
+
+## Features
+
+- Typed sync client: `ArvanCloud`
+- Typed async client: `AsyncArvanCloud`
+- Account login through `dejban.arvancloud.ir`
+- Explicit JSON session persistence for local token reuse
+- ArvanCloud CDN v4.0 domain listing
+- ArvanCloud CDN DNS record listing with pagination, type filters, search, and
+  match type
+- DNS record create, update, delete, and cloud proxy toggle
+- Pydantic v2 models with snake-case Python fields and JSON aliases
+- Mocked test suite; no live ArvanCloud requests in tests
+
+## Supported ArvanCloud APIs
+
+| SDK area | API host | Implemented operations |
+| --- | --- | --- |
+| Account auth | `https://dejban.arvancloud.ir` | Login |
+| CDN v4.0 | `https://napi.arvancloud.ir/cdn/4.0` | List domains |
+| CDN v4.0 DNS records | `https://napi.arvancloud.ir/cdn/4.0` | List, search, create, update, delete, cloud proxy toggle |
+
+The SDK sends normal functional headers such as `Accept`, `User-Agent`, and
+`Authorization`. It does not imitate browser fingerprints or send browser-only
+headers such as `Origin`, `Referer`, `Sec-Fetch-*`, `DNT`, or `Sec-GPC`.
 
 ## Requirements
 
@@ -11,7 +46,9 @@ with synchronous and asynchronous clients.
 - `httpx`
 - Pydantic v2
 
-## Install from source
+## Installation
+
+Install from source:
 
 ```bash
 python -m pip install -e .
@@ -23,15 +60,16 @@ For development:
 python -m pip install -e ".[dev]"
 ```
 
-## Synchronous login
+## Environment variables
 
-Set credentials outside your source code:
+Keep credentials and local test values outside source code:
 
 ```bash
 export ARVANCLD_EMAIL="you@example.com"
 export ARVANCLD_PASSWORD="your-password"
 export ARVANCLD_DOMAIN="snapp.ir"
 export ARVANCLD_RECORD_ID="00000000-0000-4000-8000-000000000001"
+export ARVANCLD_RECORD_IP="85.5.5.6"
 export ARVANCLD_SESSION=".arvancld-session.json"
 export ARVANCLD_DNS_RECORD_TYPES="a,aaaa,cname"
 export ARVANCLD_DNS_RECORD_TYPE="aaaa"
@@ -46,6 +84,7 @@ $env:ARVANCLD_EMAIL = "you@example.com"
 $env:ARVANCLD_PASSWORD = "your-password"
 $env:ARVANCLD_DOMAIN = "snapp.ir"
 $env:ARVANCLD_RECORD_ID = "00000000-0000-4000-8000-000000000001"
+$env:ARVANCLD_RECORD_IP = "85.5.5.6"
 $env:ARVANCLD_SESSION = ".arvancld-session.json"
 $env:ARVANCLD_DNS_RECORD_TYPES = "a,aaaa,cname"
 $env:ARVANCLD_DNS_RECORD_TYPE = "aaaa"
@@ -53,7 +92,7 @@ $env:ARVANCLD_DNS_SEARCH = "sss"
 $env:ARVANCLD_DNS_MATCH_TYPE = "exact"
 ```
 
-Then log in:
+## Quickstart: login and list CDN domains
 
 ```python
 import os
@@ -65,33 +104,14 @@ with ArvanCloud() as client:
         email=os.environ["ARVANCLD_EMAIL"],
         password=os.environ["ARVANCLD_PASSWORD"],
     )
-
     print(result.default_account)
-    print(result.expires_at)
-```
-
-## CDN domain listing
-
-CDN requests use the access token from a successful login and keep it only in
-process memory:
-
-```python
-import os
-
-from arvancld import ArvanCloud
-
-with ArvanCloud() as client:
-    client.auth.login(
-        email=os.environ["ARVANCLD_EMAIL"],
-        password=os.environ["ARVANCLD_PASSWORD"],
-    )
 
     domains = client.cdn.domains.list(page=1, per_page=5)
     for domain in domains.data:
         print(domain.domain, domain.status)
 ```
 
-## Explicit JSON session persistence
+## Reuse an ArvanCloud login session
 
 Session files are opt-in and path-based. They store access and refresh tokens in
 plaintext JSON, so treat them like browser cookies or local session data. Keep
@@ -125,7 +145,7 @@ with ArvanCloud() as client:
         print(domain.domain, domain.status)
 ```
 
-Async clients use the same local file methods:
+Async clients use the same local session file methods:
 
 ```python
 import asyncio
@@ -156,7 +176,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-## CDN DNS record listing
+## List and search ArvanCloud CDN DNS records
 
 ```python
 import os
@@ -178,9 +198,9 @@ with ArvanCloud() as client:
     )
 
     records = client.cdn.dns_records.list(
-        os.environ["ARVANCLD_DOMAIN"],
+        os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
         page=1,
-        per_page=25,
+        per_page=100,
         record_types=optional_record_types(),
         search=os.environ.get("ARVANCLD_DNS_SEARCH"),
         match_type=os.environ.get("ARVANCLD_DNS_MATCH_TYPE"),
@@ -189,7 +209,13 @@ with ArvanCloud() as client:
         print(record.type, record.name, record.ttl)
 ```
 
-Search with exact match and a single record type:
+Supported DNS record type filters:
+
+```text
+a, aaaa, aname, cname, ns, mx, srv, txt, ptr, caa, tlsa
+```
+
+Exact search example:
 
 ```python
 import os
@@ -214,7 +240,7 @@ with ArvanCloud() as client:
         print(record.type, record.name, record.ttl)
 ```
 
-## CDN DNS record creation
+## Create a CDN DNS record
 
 ```python
 import os
@@ -253,28 +279,7 @@ with ArvanCloud() as client:
     print(record.id)
 ```
 
-## CDN DNS cloud proxy toggle
-
-```python
-import os
-
-from arvancld import ArvanCloud
-
-with ArvanCloud() as client:
-    client.auth.login(
-        email=os.environ["ARVANCLD_EMAIL"],
-        password=os.environ["ARVANCLD_PASSWORD"],
-    )
-
-    record = client.cdn.dns_records.set_cloud(
-        os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
-        os.environ["ARVANCLD_RECORD_ID"],
-        cloud=True,
-    )
-    print(record.cloud)
-```
-
-## CDN DNS record editing
+## Update, delete, or toggle CDN cloud proxy
 
 ```python
 import os
@@ -288,7 +293,7 @@ with ArvanCloud() as client:
         password=os.environ["ARVANCLD_PASSWORD"],
     )
 
-    record = client.cdn.dns_records.update(
+    updated = client.cdn.dns_records.update(
         os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
         DNSRecordUpdate(
             id=UUID(os.environ["ARVANCLD_RECORD_ID"]),
@@ -312,22 +317,14 @@ with ArvanCloud() as client:
             ),
         ),
     )
-    print(record.updated_at)
-```
+    print(updated.updated_at)
 
-## CDN DNS record deletion
-
-```python
-import os
-from uuid import UUID
-
-from arvancld import ArvanCloud
-
-with ArvanCloud() as client:
-    client.auth.login(
-        email=os.environ["ARVANCLD_EMAIL"],
-        password=os.environ["ARVANCLD_PASSWORD"],
+    proxied = client.cdn.dns_records.set_cloud(
+        os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
+        os.environ["ARVANCLD_RECORD_ID"],
+        cloud=True,
     )
+    print(proxied.cloud)
 
     result = client.cdn.dns_records.delete(
         os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
@@ -336,82 +333,32 @@ with ArvanCloud() as client:
     print(result.message)
 ```
 
-## Asynchronous login
+## Async ArvanCloud CDN example
 
 ```python
 import asyncio
 import os
-from uuid import UUID
 
-from arvancld import (
-    AsyncArvanCloud,
-    DNSRecordCreate,
-    DNSRecordIPValue,
-    DNSRecordUpdate,
-    IPFilterMode,
-)
+from arvancld import AsyncArvanCloud
 
 
 async def main() -> None:
     async with AsyncArvanCloud() as client:
-        result = await client.auth.login(
+        await client.auth.login(
             email=os.environ["ARVANCLD_EMAIL"],
             password=os.environ["ARVANCLD_PASSWORD"],
         )
-        print(result.default_account)
 
         domains = await client.cdn.domains.list(page=1, per_page=5)
         print(f"Domains: {domains.meta.total}")
 
         records = await client.cdn.dns_records.list(
-            os.environ["ARVANCLD_DOMAIN"],
+            os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
             record_types=["a", "aaaa", "cname"],
             page=1,
             per_page=100,
         )
         print(f"DNS records: {records.meta.total}")
-
-        created = await client.cdn.dns_records.create(
-            "snapp.ir",
-            DNSRecordCreate(
-                type="A",
-                name="sss",
-                cloud=True,
-                value=[DNSRecordIPValue(ip="85.5.5.5", port=None, weight=None, country="")],
-                ttl=120,
-                upstream_https="default",
-                ip_filter_mode=IPFilterMode(count="single", geo_filter="none", order="none"),
-            ),
-        )
-        print(created.id)
-
-        updated = await client.cdn.dns_records.update(
-            os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
-            DNSRecordUpdate(
-                id=UUID(os.environ["ARVANCLD_RECORD_ID"]),
-                type="A",
-                name="sss",
-                cloud=True,
-                value=[DNSRecordIPValue(ip="85.5.5.6", port=None, weight=100, country="")],
-                ttl=120,
-                upstream_https="default",
-                ip_filter_mode=IPFilterMode(count="single", order="none", geo_filter="none"),
-            ),
-        )
-        print(updated.updated_at)
-
-        deleted = await client.cdn.dns_records.delete(
-            os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
-            os.environ["ARVANCLD_RECORD_ID"],
-        )
-        print(deleted.message)
-
-        proxied = await client.cdn.dns_records.set_cloud(
-            os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
-            os.environ["ARVANCLD_RECORD_ID"],
-            cloud=False,
-        )
-        print(proxied.cloud)
 
 
 asyncio.run(main())
@@ -427,9 +374,6 @@ Both clients accept these keyword arguments:
 - `timeout`: request timeout in seconds, defaulting to `30.0`
 - `user_agent`: defaults to `arvancld/0.1.0`
 
-The library sends a normal SDK user agent and does not imitate browser
-fingerprints or send browser-only security headers.
-
 ## Credential handling
 
 - Passwords are used only to construct the login request and are not retained.
@@ -439,15 +383,6 @@ fingerprints or send browser-only security headers.
 - `client.auth.load_session(path)` restores unexpired saved tokens into memory.
 - `client.auth.clear_session(path)` deletes the local session file and clears
   in-memory tokens.
-- CDN listing calls use the in-memory access token from `client.auth.tokens`.
-- CDN create calls use the same in-memory access token and do not persist new
-  credentials.
-- CDN edit calls use the same in-memory access token and do not persist new
-  credentials.
-- CDN delete calls use the same in-memory access token and do not persist new
-  credentials.
-- CDN cloud proxy toggles use the same in-memory access token and do not persist
-  new credentials.
 - CDN requests build ArvanCloud's account-scoped bearer header from the login
   `accessToken` and `defaultAccount` values in memory.
 - Token fields are excluded from model representations.
@@ -459,6 +394,7 @@ fingerprints or send browser-only security headers.
 
 ```bash
 python -m ruff check .
+python -m ruff format --check .
 python -m pytest
 ```
 
