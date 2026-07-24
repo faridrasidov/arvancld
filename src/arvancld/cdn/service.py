@@ -62,7 +62,7 @@ def _authorization_header(token_provider: _TokenProvider) -> dict[str, str]:
     tokens = token_provider.tokens
     if tokens is None:
         raise AuthenticationRequiredError("CDN requests require a successful login first")
-    return {"Authorization": f"Bearer {tokens.access_token}"}
+    return {"Authorization": f"Bearer {tokens.access_token}.{tokens.default_account}"}
 
 
 class DomainService:

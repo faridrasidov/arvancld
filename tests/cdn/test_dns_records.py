@@ -141,7 +141,9 @@ def test_sync_list_dns_records_sends_expected_request_and_parses_fields(
     assert request.url.path == "/cdn/4.0/domains/snapp.ir/dns-records"
     assert request.url.params["page"] == "1"
     assert request.url.params["per_page"] == "25"
-    assert request.headers["Authorization"] == "Bearer access-secret"
+    assert request.headers["Authorization"] == (
+        "Bearer access-secret.af999c67-2a12-517c-b52b-8bb5e2b59bad"
+    )
     _assert_no_browser_headers(request)
 
 
@@ -162,7 +164,9 @@ async def test_async_list_dns_records_sends_expected_request(
 
     assert page.data[0].name == "home-1"
     request = route.calls[0].request
-    assert request.headers["Authorization"] == "Bearer access-secret"
+    assert request.headers["Authorization"] == (
+        "Bearer access-secret.af999c67-2a12-517c-b52b-8bb5e2b59bad"
+    )
     assert request.url.params["page"] == "2"
     assert request.url.params["per_page"] == "50"
 
@@ -203,7 +207,9 @@ def test_sync_create_dns_record_sends_expected_request_and_parses_fields(
     assert request.headers["Accept"] == "application/json"
     assert request.headers["Content-Type"] == "application/json"
     assert request.headers["User-Agent"] == "arvancld/0.1.0"
-    assert request.headers["Authorization"] == "Bearer access-secret"
+    assert request.headers["Authorization"] == (
+        "Bearer access-secret.af999c67-2a12-517c-b52b-8bb5e2b59bad"
+    )
     assert json.loads(request.content) == {
         "type": "A",
         "name": "sss",
@@ -233,7 +239,9 @@ async def test_async_create_dns_record_sends_expected_request(
 
     assert record.type == "a"
     request = route.calls[0].request
-    assert request.headers["Authorization"] == "Bearer access-secret"
+    assert request.headers["Authorization"] == (
+        "Bearer access-secret.af999c67-2a12-517c-b52b-8bb5e2b59bad"
+    )
     assert request.url.path == "/cdn/4.0/domains/snapp.ir/dns-records"
 
 
@@ -269,7 +277,9 @@ def test_sync_set_dns_record_cloud_sends_expected_request_and_parses_fields(
     assert request.headers["Accept"] == "application/json"
     assert request.headers["Content-Type"] == "application/json"
     assert request.headers["User-Agent"] == "arvancld/0.1.0"
-    assert request.headers["Authorization"] == "Bearer access-secret"
+    assert request.headers["Authorization"] == (
+        "Bearer access-secret.af999c67-2a12-517c-b52b-8bb5e2b59bad"
+    )
     assert json.loads(request.content) == {"cloud": True}
     _assert_no_browser_headers(request)
 
@@ -293,7 +303,9 @@ async def test_async_set_dns_record_cloud_can_turn_proxy_off(
 
     assert record.cloud is False
     request = route.calls[0].request
-    assert request.headers["Authorization"] == "Bearer access-secret"
+    assert request.headers["Authorization"] == (
+        "Bearer access-secret.af999c67-2a12-517c-b52b-8bb5e2b59bad"
+    )
     assert request.url.path == f"/cdn/4.0/domains/snapp.ir/dns-records/{RECORD_ID}/cloud"
     assert json.loads(request.content) == {"cloud": False}
 
@@ -330,7 +342,9 @@ def test_sync_update_dns_record_sends_expected_request_and_parses_fields(
     assert request.headers["Accept"] == "application/json"
     assert request.headers["Content-Type"] == "application/json"
     assert request.headers["User-Agent"] == "arvancld/0.1.0"
-    assert request.headers["Authorization"] == "Bearer access-secret"
+    assert request.headers["Authorization"] == (
+        "Bearer access-secret.af999c67-2a12-517c-b52b-8bb5e2b59bad"
+    )
     assert json.loads(request.content) == {
         "type": "A",
         "name": "sss",
@@ -361,7 +375,9 @@ async def test_async_update_dns_record_sends_expected_request(
 
     assert record.value == [{"ip": "85.5.5.6", "port": None, "weight": 100, "country": ""}]
     request = route.calls[0].request
-    assert request.headers["Authorization"] == "Bearer access-secret"
+    assert request.headers["Authorization"] == (
+        "Bearer access-secret.af999c67-2a12-517c-b52b-8bb5e2b59bad"
+    )
     assert request.url.path == f"/cdn/4.0/domains/snapp.ir/dns-records/{RECORD_ID}/"
 
 
@@ -394,7 +410,9 @@ def test_sync_delete_dns_record_sends_expected_request_and_parses_result(
     assert "Content-Type" not in request.headers
     assert request.headers["Accept"] == "application/json"
     assert request.headers["User-Agent"] == "arvancld/0.1.0"
-    assert request.headers["Authorization"] == "Bearer access-secret"
+    assert request.headers["Authorization"] == (
+        "Bearer access-secret.af999c67-2a12-517c-b52b-8bb5e2b59bad"
+    )
     _assert_no_browser_headers(request)
 
 
@@ -415,7 +433,9 @@ async def test_async_delete_dns_record_sends_expected_request(
 
     assert result.message == "DNS record deleted."
     request = route.calls[0].request
-    assert request.headers["Authorization"] == "Bearer access-secret"
+    assert request.headers["Authorization"] == (
+        "Bearer access-secret.af999c67-2a12-517c-b52b-8bb5e2b59bad"
+    )
     assert request.url.path == f"/cdn/4.0/domains/snapp.ir/dns-records/{RECORD_ID}"
 
 

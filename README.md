@@ -327,6 +327,8 @@ fingerprints or send browser-only security headers.
   credentials.
 - CDN cloud proxy toggles use the same in-memory access token and do not persist
   new credentials.
+- CDN requests build ArvanCloud's account-scoped bearer header from the login
+  `accessToken` and `defaultAccount` values in memory.
 - Token fields are excluded from model representations.
 - Tokens are not written to disk and refresh is not implemented until the
   refresh endpoint contract is known.

@@ -84,7 +84,9 @@ def test_sync_list_domains_sends_expected_request_and_parses_fields(
     assert request.url.params["perPage"] == "5"
     assert request.headers["Accept"] == "application/json"
     assert request.headers["User-Agent"] == "arvancld/0.1.0"
-    assert request.headers["Authorization"] == "Bearer access-secret"
+    assert request.headers["Authorization"] == (
+        "Bearer access-secret.af999c67-2a12-517c-b52b-8bb5e2b59bad"
+    )
     _assert_no_browser_headers(request)
 
 
@@ -105,7 +107,9 @@ async def test_async_list_domains_sends_expected_request(
 
     assert page.data[0].domain == "snapp.ir"
     request = route.calls[0].request
-    assert request.headers["Authorization"] == "Bearer access-secret"
+    assert request.headers["Authorization"] == (
+        "Bearer access-secret.af999c67-2a12-517c-b52b-8bb5e2b59bad"
+    )
     assert request.url.params["page"] == "2"
     assert request.url.params["perPage"] == "10"
 
