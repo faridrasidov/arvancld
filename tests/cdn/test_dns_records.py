@@ -3,12 +3,14 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from uuid import UUID
 
 import httpx
 import pytest
 import respx
+from pydantic import ValidationError
 
 from arvancld import (
     APIError,
@@ -17,7 +19,10 @@ from arvancld import (
     AsyncArvanCloud,
     AuthenticationError,
     AuthenticationRequiredError,
+    DNSRecordCreate,
+    DNSRecordIPValue,
     InvalidResponseError,
+    IPFilterMode,
     NetworkError,
 )
 
@@ -29,6 +34,42 @@ TEST_PASSWORD = "do-not-leak-this-password"
 
 def _mock_login(login_payload: dict[str, object]) -> None:
     respx.post(LOGIN_URL).mock(return_value=httpx.Response(200, json=login_payload))
+
+
+def _create_record() -> DNSRecordCreate:
+    return DNSRecordCreate(
+        type="A",
+        name="sss",
+        cloud=True,
+        value=[
+            DNSRecordIPValue(
+                ip="85.5.5.5",
+                port=None,
+                weight=None,
+                country="",
+            )
+        ],
+        ttl=120,
+        upstream_https="default",
+        ip_filter_mode=IPFilterMode(
+            count="single",
+            geo_filter="none",
+            order="none",
+        ),
+    )
+
+
+def _assert_no_browser_headers(request: httpx.Request) -> None:
+    forbidden_headers = {
+        "dnt",
+        "origin",
+        "referer",
+        "sec-fetch-dest",
+        "sec-fetch-mode",
+        "sec-fetch-site",
+        "sec-gpc",
+    }
+    assert forbidden_headers.isdisjoint(request.headers)
 
 
 @respx.mock
@@ -72,9 +113,7 @@ def test_sync_list_dns_records_sends_expected_request_and_parses_fields(
     assert request.url.params["page"] == "1"
     assert request.url.params["per_page"] == "25"
     assert request.headers["Authorization"] == "Bearer access-secret"
-    assert "origin" not in request.headers
-    assert "referer" not in request.headers
-    assert "sec-fetch-mode" not in request.headers
+    _assert_no_browser_headers(request)
 
 
 @respx.mock
@@ -99,9 +138,84 @@ async def test_async_list_dns_records_sends_expected_request(
     assert request.url.params["per_page"] == "50"
 
 
+@respx.mock
+def test_sync_create_dns_record_sends_expected_request_and_parses_fields(
+    login_payload: dict[str, object],
+    dns_record_create_response_payload: dict[str, object],
+) -> None:
+    _mock_login(login_payload)
+    route = respx.post(DNS_RECORDS_URL).mock(
+        return_value=httpx.Response(
+            201,
+            json={**dns_record_create_response_payload, "ignoredEnvelopeField": True},
+        )
+    )
+
+    with ArvanCloud() as client:
+        tokens = client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        record = client.cdn.dns_records.create("snapp.ir", _create_record())
+
+        assert client.auth.tokens is tokens
+
+    assert record.id == UUID("1256bf2b-e19f-448c-8fa2-8a6e83a6acc1")
+    assert record.type == "a"
+    assert record.name == "sss"
+    assert record.value == [{"ip": "85.5.5.5", "port": None, "weight": 100, "country": ""}]
+    assert record.ttl == 120
+    assert record.cloud is True
+    assert record.upstream_https == "default"
+    assert record.ip_filter_mode.count == "single"
+    assert record.is_protected is False
+    assert record.created_at == datetime(2026, 7, 24, 17, 35, 8, tzinfo=UTC)
+
+    request = route.calls[0].request
+    assert request.method == "POST"
+    assert request.url.path == "/cdn/4.0/domains/snapp.ir/dns-records"
+    assert request.headers["Accept"] == "application/json"
+    assert request.headers["Content-Type"] == "application/json"
+    assert request.headers["User-Agent"] == "arvancld/0.1.0"
+    assert request.headers["Authorization"] == "Bearer access-secret"
+    assert json.loads(request.content) == {
+        "type": "A",
+        "name": "sss",
+        "cloud": True,
+        "value": [{"ip": "85.5.5.5", "port": None, "weight": None, "country": ""}],
+        "ttl": 120,
+        "upstream_https": "default",
+        "ip_filter_mode": {"count": "single", "order": "none", "geo_filter": "none"},
+    }
+    _assert_no_browser_headers(request)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_async_create_dns_record_sends_expected_request(
+    login_payload: dict[str, object],
+    dns_record_create_response_payload: dict[str, object],
+) -> None:
+    _mock_login(login_payload)
+    route = respx.post(DNS_RECORDS_URL).mock(
+        return_value=httpx.Response(201, json=dns_record_create_response_payload)
+    )
+
+    async with AsyncArvanCloud() as client:
+        await client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        record = await client.cdn.dns_records.create("snapp.ir", _create_record())
+
+    assert record.type == "a"
+    request = route.calls[0].request
+    assert request.headers["Authorization"] == "Bearer access-secret"
+    assert request.url.path == "/cdn/4.0/domains/snapp.ir/dns-records"
+
+
 def test_list_dns_records_requires_login() -> None:
     with ArvanCloud() as client, pytest.raises(AuthenticationRequiredError):
         client.cdn.dns_records.list("snapp.ir")
+
+
+def test_create_dns_record_requires_login() -> None:
+    with ArvanCloud() as client, pytest.raises(AuthenticationRequiredError):
+        client.cdn.dns_records.create("snapp.ir", _create_record())
 
 
 @pytest.mark.parametrize(
@@ -114,6 +228,11 @@ def test_list_dns_records_requires_login() -> None:
 def test_list_dns_records_rejects_invalid_domain(domain: str, message: str) -> None:
     with ArvanCloud() as client, pytest.raises(ValueError, match=message):
         client.cdn.dns_records.list(domain)
+
+
+def test_create_dns_record_rejects_invalid_domain() -> None:
+    with ArvanCloud() as client, pytest.raises(ValueError, match="domain"):
+        client.cdn.dns_records.create("snapp.ir/bad", _create_record())
 
 
 @pytest.mark.parametrize(
@@ -129,6 +248,31 @@ def test_list_dns_records_rejects_invalid_pagination(
 ) -> None:
     with ArvanCloud() as client, pytest.raises(ValueError, match=message):
         client.cdn.dns_records.list("snapp.ir", **kwargs)
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"type": " "},
+        {"name": " "},
+        {"ttl": 0},
+        {"upstream_https": " "},
+    ],
+)
+def test_create_dns_record_rejects_invalid_payload(override: dict[str, object]) -> None:
+    payload = {
+        "type": "A",
+        "name": "sss",
+        "cloud": True,
+        "value": [{"ip": "85.5.5.5", "port": None, "weight": None, "country": ""}],
+        "ttl": 120,
+        "upstream_https": "default",
+        "ip_filter_mode": {"count": "single", "geo_filter": "none", "order": "none"},
+    }
+    payload.update(override)
+
+    with pytest.raises(ValidationError):
+        DNSRecordCreate.model_validate(payload)
 
 
 @pytest.mark.parametrize(
@@ -171,6 +315,46 @@ def test_list_dns_records_maps_api_errors_without_leaking_secrets(
     assert "server-secret-token" not in str(error)
 
 
+@pytest.mark.parametrize(
+    ("status_code", "exception_type"),
+    [
+        (400, APIError),
+        (401, AuthenticationError),
+        (403, AuthenticationError),
+        (500, APIError),
+    ],
+)
+@respx.mock
+def test_create_dns_record_maps_api_errors_without_leaking_secrets(
+    status_code: int,
+    exception_type: type[APIError],
+    login_payload: dict[str, object],
+) -> None:
+    _mock_login(login_payload)
+    respx.post(DNS_RECORDS_URL).mock(
+        return_value=httpx.Response(
+            status_code,
+            headers={"X-Request-Id": "request-987"},
+            json={
+                "message": f"rejected {TEST_PASSWORD}",
+                "token": "server-secret-token",
+            },
+        )
+    )
+
+    with ArvanCloud() as client, pytest.raises(exception_type) as captured:
+        client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        client.cdn.dns_records.create("snapp.ir", _create_record())
+
+    error = captured.value
+    assert error.status_code == status_code
+    assert error.request_id == "request-987"
+    assert TEST_PASSWORD not in str(error)
+    assert "access-secret" not in str(error)
+    assert "refresh-secret" not in str(error)
+    assert "server-secret-token" not in str(error)
+
+
 @respx.mock
 def test_list_dns_records_maps_timeout_without_leaking_token(
     login_payload: dict[str, object],
@@ -183,6 +367,21 @@ def test_list_dns_records_maps_timeout_without_leaking_token(
     with ArvanCloud() as client, pytest.raises(ArvanCloudTimeoutError) as captured:
         client.auth.login(TEST_EMAIL, TEST_PASSWORD)
         client.cdn.dns_records.list("snapp.ir")
+
+    assert TEST_PASSWORD not in str(captured.value)
+    assert "access-secret" not in str(captured.value)
+
+
+@respx.mock
+def test_create_dns_record_maps_timeout_without_leaking_token(
+    login_payload: dict[str, object],
+) -> None:
+    _mock_login(login_payload)
+    respx.post(DNS_RECORDS_URL).mock(side_effect=httpx.ReadTimeout("transport timed out"))
+
+    with ArvanCloud() as client, pytest.raises(ArvanCloudTimeoutError) as captured:
+        client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        client.cdn.dns_records.create("snapp.ir", _create_record())
 
     assert TEST_PASSWORD not in str(captured.value)
     assert "access-secret" not in str(captured.value)
@@ -206,6 +405,21 @@ def test_list_dns_records_maps_network_failure_without_leaking_token(
 
 
 @respx.mock
+def test_create_dns_record_maps_network_failure_without_leaking_token(
+    login_payload: dict[str, object],
+) -> None:
+    _mock_login(login_payload)
+    respx.post(DNS_RECORDS_URL).mock(side_effect=httpx.ConnectError("connection failed"))
+
+    with ArvanCloud() as client, pytest.raises(NetworkError) as captured:
+        client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        client.cdn.dns_records.create("snapp.ir", _create_record())
+
+    assert TEST_PASSWORD not in str(captured.value)
+    assert "access-secret" not in str(captured.value)
+
+
+@respx.mock
 def test_list_dns_records_rejects_malformed_json(login_payload: dict[str, object]) -> None:
     _mock_login(login_payload)
     respx.get(DNS_RECORDS_URL, params={"page": "1", "per_page": "25"}).mock(
@@ -222,6 +436,22 @@ def test_list_dns_records_rejects_malformed_json(login_payload: dict[str, object
 
 
 @respx.mock
+def test_create_dns_record_rejects_malformed_json(login_payload: dict[str, object]) -> None:
+    _mock_login(login_payload)
+    respx.post(DNS_RECORDS_URL).mock(
+        return_value=httpx.Response(
+            201,
+            headers={"Content-Type": "application/json"},
+            content=b"{",
+        )
+    )
+
+    with ArvanCloud() as client, pytest.raises(InvalidResponseError, match="invalid JSON"):
+        client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        client.cdn.dns_records.create("snapp.ir", _create_record())
+
+
+@respx.mock
 def test_list_dns_records_rejects_missing_required_response_fields(
     login_payload: dict[str, object],
 ) -> None:
@@ -233,6 +463,18 @@ def test_list_dns_records_rejects_missing_required_response_fields(
     with ArvanCloud() as client, pytest.raises(InvalidResponseError, match="expected contract"):
         client.auth.login(TEST_EMAIL, TEST_PASSWORD)
         client.cdn.dns_records.list("snapp.ir")
+
+
+@respx.mock
+def test_create_dns_record_rejects_missing_required_response_fields(
+    login_payload: dict[str, object],
+) -> None:
+    _mock_login(login_payload)
+    respx.post(DNS_RECORDS_URL).mock(return_value=httpx.Response(201, json={"data": {}}))
+
+    with ArvanCloud() as client, pytest.raises(InvalidResponseError, match="expected contract"):
+        client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        client.cdn.dns_records.create("snapp.ir", _create_record())
 
 
 @respx.mock
@@ -255,3 +497,22 @@ def test_list_dns_records_ignores_unknown_response_fields(
         page = client.cdn.dns_records.list("snapp.ir")
 
     assert page.data[0].name == "home-1"
+
+
+@respx.mock
+def test_create_dns_record_ignores_unknown_response_fields(
+    login_payload: dict[str, object],
+    dns_record_create_response_payload: dict[str, object],
+) -> None:
+    response_payload = dict(dns_record_create_response_payload)
+    response_data = dict(response_payload["data"])
+    response_data["futureField"] = {"can": "be ignored"}
+    response_payload["data"] = response_data
+    _mock_login(login_payload)
+    respx.post(DNS_RECORDS_URL).mock(return_value=httpx.Response(201, json=response_payload))
+
+    with ArvanCloud() as client:
+        client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        record = client.cdn.dns_records.create("snapp.ir", _create_record())
+
+    assert record.name == "sss"

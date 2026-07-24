@@ -2,7 +2,15 @@
 """Public package interface for arvancld."""
 
 from arvancld.auth import LoginResult
-from arvancld.cdn import CDNDomain, CDNDomainPage, DNSRecord, DNSRecordPage
+from arvancld.cdn import (
+    CDNDomain,
+    CDNDomainPage,
+    DNSRecord,
+    DNSRecordCreate,
+    DNSRecordIPValue,
+    DNSRecordPage,
+    IPFilterMode,
+)
 from arvancld.client import ArvanCloud, AsyncArvanCloud
 from arvancld.config import ClientConfig
 from arvancld.exceptions import (
@@ -29,7 +37,10 @@ __all__ = [
     "CDNDomainPage",
     "ClientConfig",
     "DNSRecord",
+    "DNSRecordCreate",
+    "DNSRecordIPValue",
     "DNSRecordPage",
+    "IPFilterMode",
     "InvalidResponseError",
     "LoginResult",
     "NetworkError",

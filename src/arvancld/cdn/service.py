@@ -8,7 +8,13 @@ from urllib.parse import quote
 
 from arvancld._transport import AsyncTransport, SyncTransport
 from arvancld.auth.models import LoginResult
-from arvancld.cdn.models import CDNDomainPage, DNSRecordPage
+from arvancld.cdn.models import (
+    CDNDomainPage,
+    DNSRecord,
+    DNSRecordCreate,
+    DNSRecordCreateResponse,
+    DNSRecordPage,
+)
 from arvancld.config import ClientConfig
 from arvancld.exceptions import AuthenticationRequiredError
 
@@ -100,6 +106,19 @@ class DNSRecordService:
             headers=_authorization_header(self._token_provider),
         )
 
+    def create(self, domain: str, record: DNSRecordCreate) -> DNSRecord:
+        """Create a DNS record for a CDN domain."""
+
+        domain = quote(_validate_domain(domain), safe=".-")
+        response = self._transport.request_model(
+            "POST",
+            self._config.cdn_url(f"/domains/{domain}/dns-records"),
+            model=DNSRecordCreateResponse,
+            json=record.model_dump(mode="json", by_alias=True),
+            headers=_authorization_header(self._token_provider),
+        )
+        return response.data
+
 
 class CDNService:
     """Synchronous CDN API namespace."""
@@ -171,6 +190,19 @@ class AsyncDNSRecordService:
             params={"page": page, "per_page": per_page},
             headers=_authorization_header(self._token_provider),
         )
+
+    async def create(self, domain: str, record: DNSRecordCreate) -> DNSRecord:
+        """Create a DNS record for a CDN domain."""
+
+        domain = quote(_validate_domain(domain), safe=".-")
+        response = await self._transport.request_model(
+            "POST",
+            self._config.cdn_url(f"/domains/{domain}/dns-records"),
+            model=DNSRecordCreateResponse,
+            json=record.model_dump(mode="json", by_alias=True),
+            headers=_authorization_header(self._token_provider),
+        )
+        return response.data
 
 
 class AsyncCDNService:

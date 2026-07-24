@@ -108,6 +108,48 @@ class IPFilterMode(BaseModel):
     geo_filter: str
 
 
+class DNSRecordIPValue(BaseModel):
+    """IP target value for DNS record create requests."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    ip: str
+    port: int | None = None
+    weight: int | None = None
+    country: str = ""
+
+
+DNSRecordCreateValue = dict[str, Any] | list[DNSRecordIPValue | dict[str, Any]]
+
+
+class DNSRecordCreate(BaseModel):
+    """Payload for creating a DNS record."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    type: str
+    name: str
+    cloud: bool
+    value: DNSRecordCreateValue
+    ttl: int
+    upstream_https: str
+    ip_filter_mode: IPFilterMode
+
+    @field_validator("type", "name", "upstream_https")
+    @classmethod
+    def ensure_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("field must not be blank")
+        return value
+
+    @field_validator("ttl")
+    @classmethod
+    def ensure_positive_ttl(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("ttl must be greater than zero")
+        return value
+
+
 class DNSRecord(BaseModel):
     """A DNS record returned by the CDN DNS records endpoint."""
 
@@ -140,4 +182,13 @@ class DNSRecordPage(BaseModel):
     data: list[DNSRecord]
     links: PaginationLinks
     meta: PaginationMeta
+    message: str | None = None
+
+
+class DNSRecordCreateResponse(BaseModel):
+    """Envelope returned by the DNS record create endpoint."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    data: DNSRecord
     message: str | None = None

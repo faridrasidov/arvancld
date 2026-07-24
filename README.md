@@ -29,7 +29,7 @@ Set credentials outside your source code:
 ```bash
 export ARVANCLD_EMAIL="you@example.com"
 export ARVANCLD_PASSWORD="your-password"
-export ARVANCLD_DOMAIN="example.ir"
+export ARVANCLD_DOMAIN="snapp.ir"
 ```
 
 PowerShell:
@@ -37,7 +37,7 @@ PowerShell:
 ```powershell
 $env:ARVANCLD_EMAIL = "you@example.com"
 $env:ARVANCLD_PASSWORD = "your-password"
-$env:ARVANCLD_DOMAIN = "example.ir"
+$env:ARVANCLD_DOMAIN = "snapp.ir"
 ```
 
 Then log in:
@@ -100,13 +100,52 @@ with ArvanCloud() as client:
         print(record.type, record.name, record.ttl)
 ```
 
+## CDN DNS record creation
+
+```python
+import os
+
+from arvancld import ArvanCloud, DNSRecordCreate, DNSRecordIPValue, IPFilterMode
+
+with ArvanCloud() as client:
+    client.auth.login(
+        email=os.environ["ARVANCLD_EMAIL"],
+        password=os.environ["ARVANCLD_PASSWORD"],
+    )
+
+    record = client.cdn.dns_records.create(
+        "snapp.ir",
+        DNSRecordCreate(
+            type="A",
+            name="sss",
+            cloud=True,
+            value=[
+                DNSRecordIPValue(
+                    ip="85.5.5.5",
+                    port=None,
+                    weight=None,
+                    country="",
+                )
+            ],
+            ttl=120,
+            upstream_https="default",
+            ip_filter_mode=IPFilterMode(
+                count="single",
+                geo_filter="none",
+                order="none",
+            ),
+        ),
+    )
+    print(record.id)
+```
+
 ## Asynchronous login
 
 ```python
 import asyncio
 import os
 
-from arvancld import AsyncArvanCloud
+from arvancld import AsyncArvanCloud, DNSRecordCreate, DNSRecordIPValue, IPFilterMode
 
 
 async def main() -> None:
@@ -122,6 +161,20 @@ async def main() -> None:
 
         records = await client.cdn.dns_records.list(os.environ["ARVANCLD_DOMAIN"])
         print(f"DNS records: {records.meta.total}")
+
+        created = await client.cdn.dns_records.create(
+            "snapp.ir",
+            DNSRecordCreate(
+                type="A",
+                name="sss",
+                cloud=True,
+                value=[DNSRecordIPValue(ip="85.5.5.5", port=None, weight=None, country="")],
+                ttl=120,
+                upstream_https="default",
+                ip_filter_mode=IPFilterMode(count="single", geo_filter="none", order="none"),
+            ),
+        )
+        print(created.id)
 
 
 asyncio.run(main())
@@ -145,6 +198,8 @@ fingerprints or send browser-only security headers.
 - Passwords are used only to construct the login request and are not retained.
 - Access and refresh tokens are held in memory at `client.auth.tokens`.
 - CDN listing calls use the in-memory access token from `client.auth.tokens`.
+- CDN create calls use the same in-memory access token and do not persist new
+  credentials.
 - Token fields are excluded from model representations.
 - Tokens are not written to disk and refresh is not implemented until the
   refresh endpoint contract is known.
