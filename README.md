@@ -2,8 +2,8 @@
 
 `arvancld` is a typed Python client for ArvanCloud services. The first release
 implements account login plus CDN domain listing, DNS record listing, DNS record
-creation, DNS record editing, and DNS cloud proxy toggling with synchronous and
-asynchronous clients.
+creation, DNS record editing, DNS record deletion, and DNS cloud proxy toggling
+with synchronous and asynchronous clients.
 
 ## Requirements
 
@@ -204,6 +204,27 @@ with ArvanCloud() as client:
     print(record.updated_at)
 ```
 
+## CDN DNS record deletion
+
+```python
+import os
+from uuid import UUID
+
+from arvancld import ArvanCloud
+
+with ArvanCloud() as client:
+    client.auth.login(
+        email=os.environ["ARVANCLD_EMAIL"],
+        password=os.environ["ARVANCLD_PASSWORD"],
+    )
+
+    result = client.cdn.dns_records.delete(
+        os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
+        UUID(os.environ["ARVANCLD_RECORD_ID"]),
+    )
+    print(result.message)
+```
+
 ## Asynchronous login
 
 ```python
@@ -263,6 +284,12 @@ async def main() -> None:
         )
         print(updated.updated_at)
 
+        deleted = await client.cdn.dns_records.delete(
+            os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
+            os.environ["ARVANCLD_RECORD_ID"],
+        )
+        print(deleted.message)
+
         proxied = await client.cdn.dns_records.set_cloud(
             os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
             os.environ["ARVANCLD_RECORD_ID"],
@@ -295,6 +322,8 @@ fingerprints or send browser-only security headers.
 - CDN create calls use the same in-memory access token and do not persist new
   credentials.
 - CDN edit calls use the same in-memory access token and do not persist new
+  credentials.
+- CDN delete calls use the same in-memory access token and do not persist new
   credentials.
 - CDN cloud proxy toggles use the same in-memory access token and do not persist
   new credentials.

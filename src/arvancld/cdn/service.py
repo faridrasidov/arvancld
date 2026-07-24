@@ -15,6 +15,7 @@ from arvancld.cdn.models import (
     DNSRecordCloudUpdateResponse,
     DNSRecordCreate,
     DNSRecordCreateResponse,
+    DNSRecordDeleteResult,
     DNSRecordPage,
     DNSRecordUpdate,
     DNSRecordUpdateResponse,
@@ -163,6 +164,18 @@ class DNSRecordService:
         )
         return response.data
 
+    def delete(self, domain: str, record_id: UUID | str) -> DNSRecordDeleteResult:
+        """Delete a DNS record from a CDN domain."""
+
+        domain = quote(_validate_domain(domain), safe=".-")
+        record_id = quote(_validate_record_id(record_id), safe="-")
+        return self._transport.request_model(
+            "DELETE",
+            self._config.cdn_url(f"/domains/{domain}/dns-records/{record_id}"),
+            model=DNSRecordDeleteResult,
+            headers=_authorization_header(self._token_provider),
+        )
+
 
 class CDNService:
     """Synchronous CDN API namespace."""
@@ -275,6 +288,18 @@ class AsyncDNSRecordService:
             headers=_authorization_header(self._token_provider),
         )
         return response.data
+
+    async def delete(self, domain: str, record_id: UUID | str) -> DNSRecordDeleteResult:
+        """Delete a DNS record from a CDN domain."""
+
+        domain = quote(_validate_domain(domain), safe=".-")
+        record_id = quote(_validate_record_id(record_id), safe="-")
+        return await self._transport.request_model(
+            "DELETE",
+            self._config.cdn_url(f"/domains/{domain}/dns-records/{record_id}"),
+            model=DNSRecordDeleteResult,
+            headers=_authorization_header(self._token_provider),
+        )
 
 
 class AsyncCDNService:

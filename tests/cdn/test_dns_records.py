@@ -31,6 +31,7 @@ LOGIN_URL = "https://dejban.arvancloud.ir/v1/auth/login"
 DNS_RECORDS_URL = "https://napi.arvancloud.ir/cdn/4.0/domains/snapp.ir/dns-records"
 RECORD_ID = UUID("1256bf2b-e19f-448c-8fa2-8a6e83a6acc1")
 DNS_RECORD_CLOUD_URL = f"{DNS_RECORDS_URL}/{RECORD_ID}/cloud"
+DNS_RECORD_DELETE_URL = f"{DNS_RECORDS_URL}/{RECORD_ID}"
 DNS_RECORD_UPDATE_URL = f"{DNS_RECORDS_URL}/{RECORD_ID}/"
 TEST_EMAIL = "person@example.com"
 TEST_PASSWORD = "do-not-leak-this-password"
@@ -364,6 +365,60 @@ async def test_async_update_dns_record_sends_expected_request(
     assert request.url.path == f"/cdn/4.0/domains/snapp.ir/dns-records/{RECORD_ID}/"
 
 
+@respx.mock
+def test_sync_delete_dns_record_sends_expected_request_and_parses_result(
+    login_payload: dict[str, object],
+    dns_record_delete_response_payload: dict[str, object],
+) -> None:
+    _mock_login(login_payload)
+    route = respx.delete(DNS_RECORD_DELETE_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={**dns_record_delete_response_payload, "ignoredEnvelopeField": True},
+        )
+    )
+
+    with ArvanCloud() as client:
+        tokens = client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        result = client.cdn.dns_records.delete("snapp.ir", RECORD_ID)
+
+        assert client.auth.tokens is tokens
+
+    assert result.data == []
+    assert result.message == "DNS record deleted."
+
+    request = route.calls[0].request
+    assert request.method == "DELETE"
+    assert request.url.path == f"/cdn/4.0/domains/snapp.ir/dns-records/{RECORD_ID}"
+    assert request.content == b""
+    assert "Content-Type" not in request.headers
+    assert request.headers["Accept"] == "application/json"
+    assert request.headers["User-Agent"] == "arvancld/0.1.0"
+    assert request.headers["Authorization"] == "Bearer access-secret"
+    _assert_no_browser_headers(request)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_async_delete_dns_record_sends_expected_request(
+    login_payload: dict[str, object],
+    dns_record_delete_response_payload: dict[str, object],
+) -> None:
+    _mock_login(login_payload)
+    route = respx.delete(DNS_RECORD_DELETE_URL).mock(
+        return_value=httpx.Response(200, json=dns_record_delete_response_payload)
+    )
+
+    async with AsyncArvanCloud() as client:
+        await client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        result = await client.cdn.dns_records.delete("snapp.ir", str(RECORD_ID))
+
+    assert result.message == "DNS record deleted."
+    request = route.calls[0].request
+    assert request.headers["Authorization"] == "Bearer access-secret"
+    assert request.url.path == f"/cdn/4.0/domains/snapp.ir/dns-records/{RECORD_ID}"
+
+
 def test_list_dns_records_requires_login() -> None:
     with ArvanCloud() as client, pytest.raises(AuthenticationRequiredError):
         client.cdn.dns_records.list("snapp.ir")
@@ -382,6 +437,11 @@ def test_set_dns_record_cloud_requires_login() -> None:
 def test_update_dns_record_requires_login() -> None:
     with ArvanCloud() as client, pytest.raises(AuthenticationRequiredError):
         client.cdn.dns_records.update("snapp.ir", _update_record())
+
+
+def test_delete_dns_record_requires_login() -> None:
+    with ArvanCloud() as client, pytest.raises(AuthenticationRequiredError):
+        client.cdn.dns_records.delete("snapp.ir", RECORD_ID)
 
 
 @pytest.mark.parametrize(
@@ -411,10 +471,21 @@ def test_update_dns_record_rejects_invalid_domain() -> None:
         client.cdn.dns_records.update("snapp.ir/bad", _update_record())
 
 
+def test_delete_dns_record_rejects_invalid_domain() -> None:
+    with ArvanCloud() as client, pytest.raises(ValueError, match="domain"):
+        client.cdn.dns_records.delete("snapp.ir/bad", RECORD_ID)
+
+
 @pytest.mark.parametrize("record_id", [" ", "bad/id"])
 def test_set_dns_record_cloud_rejects_invalid_record_id(record_id: str) -> None:
     with ArvanCloud() as client, pytest.raises(ValueError, match="record_id"):
         client.cdn.dns_records.set_cloud("snapp.ir", record_id, cloud=True)
+
+
+@pytest.mark.parametrize("record_id", [" ", "bad/id"])
+def test_delete_dns_record_rejects_invalid_record_id(record_id: str) -> None:
+    with ArvanCloud() as client, pytest.raises(ValueError, match="record_id"):
+        client.cdn.dns_records.delete("snapp.ir", record_id)
 
 
 @pytest.mark.parametrize(
@@ -644,6 +715,46 @@ def test_update_dns_record_maps_api_errors_without_leaking_secrets(
     assert "server-secret-token" not in str(error)
 
 
+@pytest.mark.parametrize(
+    ("status_code", "exception_type"),
+    [
+        (400, APIError),
+        (401, AuthenticationError),
+        (403, AuthenticationError),
+        (500, APIError),
+    ],
+)
+@respx.mock
+def test_delete_dns_record_maps_api_errors_without_leaking_secrets(
+    status_code: int,
+    exception_type: type[APIError],
+    login_payload: dict[str, object],
+) -> None:
+    _mock_login(login_payload)
+    respx.delete(DNS_RECORD_DELETE_URL).mock(
+        return_value=httpx.Response(
+            status_code,
+            headers={"X-Request-Id": "request-159"},
+            json={
+                "message": f"rejected {TEST_PASSWORD}",
+                "token": "server-secret-token",
+            },
+        )
+    )
+
+    with ArvanCloud() as client, pytest.raises(exception_type) as captured:
+        client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        client.cdn.dns_records.delete("snapp.ir", RECORD_ID)
+
+    error = captured.value
+    assert error.status_code == status_code
+    assert error.request_id == "request-159"
+    assert TEST_PASSWORD not in str(error)
+    assert "access-secret" not in str(error)
+    assert "refresh-secret" not in str(error)
+    assert "server-secret-token" not in str(error)
+
+
 @respx.mock
 def test_list_dns_records_maps_timeout_without_leaking_token(
     login_payload: dict[str, object],
@@ -707,6 +818,21 @@ def test_update_dns_record_maps_timeout_without_leaking_token(
 
 
 @respx.mock
+def test_delete_dns_record_maps_timeout_without_leaking_token(
+    login_payload: dict[str, object],
+) -> None:
+    _mock_login(login_payload)
+    respx.delete(DNS_RECORD_DELETE_URL).mock(side_effect=httpx.ReadTimeout("transport timed out"))
+
+    with ArvanCloud() as client, pytest.raises(ArvanCloudTimeoutError) as captured:
+        client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        client.cdn.dns_records.delete("snapp.ir", RECORD_ID)
+
+    assert TEST_PASSWORD not in str(captured.value)
+    assert "access-secret" not in str(captured.value)
+
+
+@respx.mock
 def test_list_dns_records_maps_network_failure_without_leaking_token(
     login_payload: dict[str, object],
 ) -> None:
@@ -763,6 +889,21 @@ def test_update_dns_record_maps_network_failure_without_leaking_token(
     with ArvanCloud() as client, pytest.raises(NetworkError) as captured:
         client.auth.login(TEST_EMAIL, TEST_PASSWORD)
         client.cdn.dns_records.update("snapp.ir", _update_record())
+
+    assert TEST_PASSWORD not in str(captured.value)
+    assert "access-secret" not in str(captured.value)
+
+
+@respx.mock
+def test_delete_dns_record_maps_network_failure_without_leaking_token(
+    login_payload: dict[str, object],
+) -> None:
+    _mock_login(login_payload)
+    respx.delete(DNS_RECORD_DELETE_URL).mock(side_effect=httpx.ConnectError("connection failed"))
+
+    with ArvanCloud() as client, pytest.raises(NetworkError) as captured:
+        client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        client.cdn.dns_records.delete("snapp.ir", RECORD_ID)
 
     assert TEST_PASSWORD not in str(captured.value)
     assert "access-secret" not in str(captured.value)
@@ -833,6 +974,22 @@ def test_update_dns_record_rejects_malformed_json(login_payload: dict[str, objec
 
 
 @respx.mock
+def test_delete_dns_record_rejects_malformed_json(login_payload: dict[str, object]) -> None:
+    _mock_login(login_payload)
+    respx.delete(DNS_RECORD_DELETE_URL).mock(
+        return_value=httpx.Response(
+            200,
+            headers={"Content-Type": "application/json"},
+            content=b"{",
+        )
+    )
+
+    with ArvanCloud() as client, pytest.raises(InvalidResponseError, match="invalid JSON"):
+        client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        client.cdn.dns_records.delete("snapp.ir", RECORD_ID)
+
+
+@respx.mock
 def test_list_dns_records_rejects_missing_required_response_fields(
     login_payload: dict[str, object],
 ) -> None:
@@ -880,6 +1037,18 @@ def test_update_dns_record_rejects_missing_required_response_fields(
     with ArvanCloud() as client, pytest.raises(InvalidResponseError, match="expected contract"):
         client.auth.login(TEST_EMAIL, TEST_PASSWORD)
         client.cdn.dns_records.update("snapp.ir", _update_record())
+
+
+@respx.mock
+def test_delete_dns_record_rejects_missing_required_response_fields(
+    login_payload: dict[str, object],
+) -> None:
+    _mock_login(login_payload)
+    respx.delete(DNS_RECORD_DELETE_URL).mock(return_value=httpx.Response(200, json={"data": []}))
+
+    with ArvanCloud() as client, pytest.raises(InvalidResponseError, match="expected contract"):
+        client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        client.cdn.dns_records.delete("snapp.ir", RECORD_ID)
 
 
 @respx.mock
@@ -959,3 +1128,24 @@ def test_update_dns_record_ignores_unknown_response_fields(
         record = client.cdn.dns_records.update("snapp.ir", _update_record())
 
     assert record.value == [{"ip": "85.5.5.6", "port": None, "weight": 100, "country": ""}]
+
+
+@respx.mock
+def test_delete_dns_record_ignores_unknown_response_fields(
+    login_payload: dict[str, object],
+    dns_record_delete_response_payload: dict[str, object],
+) -> None:
+    response_payload = {
+        **dns_record_delete_response_payload,
+        "futureField": {"can": "be ignored"},
+    }
+    _mock_login(login_payload)
+    respx.delete(DNS_RECORD_DELETE_URL).mock(
+        return_value=httpx.Response(200, json=response_payload)
+    )
+
+    with ArvanCloud() as client:
+        client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        result = client.cdn.dns_records.delete("snapp.ir", RECORD_ID)
+
+    assert result.message == "DNS record deleted."

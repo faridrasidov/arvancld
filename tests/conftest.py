@@ -266,3 +266,11 @@ def dns_record_update_response_payload() -> dict[str, object]:
         },
         "message": "DNS record updated.",
     }
+
+
+@pytest.fixture
+def dns_record_delete_response_payload() -> dict[str, object]:
+    return {
+        "data": [],
+        "message": "DNS record deleted.",
+    }

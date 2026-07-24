@@ -216,3 +216,12 @@ class DNSRecordUpdateResponse(BaseModel):
 
     data: DNSRecord
     message: str | None = None
+
+
+class DNSRecordDeleteResult(BaseModel):
+    """Result returned by the DNS record delete endpoint."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    data: list[Any]
+    message: str
