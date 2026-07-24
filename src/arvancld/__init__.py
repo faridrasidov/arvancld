@@ -1,7 +1,7 @@
 # src/arvancld/__init__.py
 """Public package interface for arvancld."""
 
-from arvancld.auth import LoginResult
+from arvancld.auth import LoginResult, StoredSession
 from arvancld.cdn import (
     CDNDomain,
     CDNDomainPage,
@@ -22,7 +22,10 @@ from arvancld.exceptions import (
     AuthenticationError,
     AuthenticationRequiredError,
     InvalidResponseError,
+    InvalidSessionError,
     NetworkError,
+    SessionError,
+    SessionExpiredError,
 )
 
 __version__ = "0.1.0"
@@ -46,7 +49,11 @@ __all__ = [
     "DNSRecordUpdate",
     "IPFilterMode",
     "InvalidResponseError",
+    "InvalidSessionError",
     "LoginResult",
     "NetworkError",
+    "SessionError",
+    "SessionExpiredError",
+    "StoredSession",
     "__version__",
 ]

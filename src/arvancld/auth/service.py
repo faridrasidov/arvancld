@@ -3,9 +3,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from arvancld._transport import AsyncTransport, SyncTransport
 from arvancld.auth.models import LoginResponse, LoginResult
+from arvancld.auth.session import clear_session_file, load_session_file, save_session_file
 from arvancld.config import ClientConfig
+from arvancld.exceptions import AuthenticationRequiredError
 
 LOGIN_PATH = "/v1/auth/login"
 
@@ -45,6 +49,28 @@ class AuthService:
         self._tokens = response.data
         return response.data
 
+    def save_session(self, path: str | Path) -> None:
+        """Persist the current login result to an explicit plaintext JSON path."""
+
+        if self._tokens is None:
+            raise AuthenticationRequiredError(
+                "A successful login is required before saving a session"
+            )
+        save_session_file(path, self._tokens)
+
+    def load_session(self, path: str | Path) -> LoginResult:
+        """Load an unexpired saved session and retain its tokens in memory."""
+
+        tokens = load_session_file(path)
+        self._tokens = tokens
+        return tokens
+
+    def clear_session(self, path: str | Path) -> None:
+        """Delete a saved session file and clear the in-memory login state."""
+
+        clear_session_file(path)
+        self._tokens = None
+
 
 class AsyncAuthService:
     """Asynchronous account-authentication operations."""
@@ -72,3 +98,25 @@ class AsyncAuthService:
         )
         self._tokens = response.data
         return response.data
+
+    def save_session(self, path: str | Path) -> None:
+        """Persist the current login result to an explicit plaintext JSON path."""
+
+        if self._tokens is None:
+            raise AuthenticationRequiredError(
+                "A successful login is required before saving a session"
+            )
+        save_session_file(path, self._tokens)
+
+    def load_session(self, path: str | Path) -> LoginResult:
+        """Load an unexpired saved session and retain its tokens in memory."""
+
+        tokens = load_session_file(path)
+        self._tokens = tokens
+        return tokens
+
+    def clear_session(self, path: str | Path) -> None:
+        """Delete a saved session file and clear the in-memory login state."""
+
+        clear_session_file(path)
+        self._tokens = None

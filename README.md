@@ -32,6 +32,7 @@ export ARVANCLD_EMAIL="you@example.com"
 export ARVANCLD_PASSWORD="your-password"
 export ARVANCLD_DOMAIN="snapp.ir"
 export ARVANCLD_RECORD_ID="00000000-0000-4000-8000-000000000001"
+export ARVANCLD_SESSION=".arvancld-session.json"
 ```
 
 PowerShell:
@@ -41,6 +42,7 @@ $env:ARVANCLD_EMAIL = "you@example.com"
 $env:ARVANCLD_PASSWORD = "your-password"
 $env:ARVANCLD_DOMAIN = "snapp.ir"
 $env:ARVANCLD_RECORD_ID = "00000000-0000-4000-8000-000000000001"
+$env:ARVANCLD_SESSION = ".arvancld-session.json"
 ```
 
 Then log in:
@@ -79,6 +81,71 @@ with ArvanCloud() as client:
     domains = client.cdn.domains.list(page=1, per_page=5)
     for domain in domains.data:
         print(domain.domain, domain.status)
+```
+
+## Explicit JSON session persistence
+
+Session files are opt-in and path-based. They store access and refresh tokens in
+plaintext JSON, so treat them like browser cookies or local session data. Keep
+them outside source control; common `.arvancld-session*.json` filenames are
+ignored by this repository.
+
+Refresh is not implemented yet because the refresh endpoint contract has not
+been captured. If a saved session is expired, load raises `SessionExpiredError`
+and you should log in again.
+
+```python
+import os
+from pathlib import Path
+
+from arvancld import ArvanCloud, InvalidSessionError, SessionExpiredError
+
+session_path = Path(os.environ.get("ARVANCLD_SESSION", ".arvancld-session.json"))
+
+with ArvanCloud() as client:
+    try:
+        client.auth.load_session(session_path)
+    except (FileNotFoundError, InvalidSessionError, SessionExpiredError):
+        client.auth.login(
+            email=os.environ["ARVANCLD_EMAIL"],
+            password=os.environ["ARVANCLD_PASSWORD"],
+        )
+        client.auth.save_session(session_path)
+
+    domains = client.cdn.domains.list()
+    for domain in domains.data:
+        print(domain.domain, domain.status)
+```
+
+Async clients use the same local file methods:
+
+```python
+import asyncio
+import os
+from pathlib import Path
+
+from arvancld import AsyncArvanCloud, InvalidSessionError, SessionExpiredError
+
+
+async def main() -> None:
+    session_path = Path(os.environ.get("ARVANCLD_SESSION", ".arvancld-session.json"))
+
+    async with AsyncArvanCloud() as client:
+        try:
+            client.auth.load_session(session_path)
+        except (FileNotFoundError, InvalidSessionError, SessionExpiredError):
+            await client.auth.login(
+                email=os.environ["ARVANCLD_EMAIL"],
+                password=os.environ["ARVANCLD_PASSWORD"],
+            )
+            client.auth.save_session(session_path)
+
+        domains = await client.cdn.domains.list()
+        for domain in domains.data:
+            print(domain.domain, domain.status)
+
+
+asyncio.run(main())
 ```
 
 ## CDN DNS record listing
@@ -318,6 +385,11 @@ fingerprints or send browser-only security headers.
 
 - Passwords are used only to construct the login request and are not retained.
 - Access and refresh tokens are held in memory at `client.auth.tokens`.
+- `client.auth.save_session(path)` can explicitly write those tokens to a
+  plaintext JSON session file; it never stores the password.
+- `client.auth.load_session(path)` restores unexpired saved tokens into memory.
+- `client.auth.clear_session(path)` deletes the local session file and clears
+  in-memory tokens.
 - CDN listing calls use the in-memory access token from `client.auth.tokens`.
 - CDN create calls use the same in-memory access token and do not persist new
   credentials.
@@ -330,8 +402,8 @@ fingerprints or send browser-only security headers.
 - CDN requests build ArvanCloud's account-scoped bearer header from the login
   `accessToken` and `defaultAccount` values in memory.
 - Token fields are excluded from model representations.
-- Tokens are not written to disk and refresh is not implemented until the
-  refresh endpoint contract is known.
+- Tokens are written to disk only when you explicitly call `save_session(...)`.
+- Refresh is not implemented until the refresh endpoint contract is known.
 - API exceptions do not include request bodies, passwords, or token values.
 
 ## Development

@@ -3,5 +3,6 @@
 
 from arvancld.auth.models import LoginResult
 from arvancld.auth.service import AsyncAuthService, AuthService
+from arvancld.auth.session import StoredSession
 
-__all__ = ["AsyncAuthService", "AuthService", "LoginResult"]
+__all__ = ["AsyncAuthService", "AuthService", "LoginResult", "StoredSession"]

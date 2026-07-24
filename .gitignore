@@ -12,6 +12,6 @@ dist/
 .venv/
 venv/
 .env
+.arvancld-session*.json
 .idea/
 .vscode/
-

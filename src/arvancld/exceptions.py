@@ -35,6 +35,18 @@ class AuthenticationRequiredError(ArvanCloudError):
     """A request requires a prior successful login."""
 
 
+class SessionError(ArvanCloudError):
+    """A local saved session could not be read, written, or cleared."""
+
+
+class InvalidSessionError(SessionError):
+    """A local saved session file is malformed or does not match the schema."""
+
+
+class SessionExpiredError(SessionError):
+    """A local saved session exists but its access token has expired."""
+
+
 class NetworkError(ArvanCloudError):
     """The request could not reach the remote API."""
 
