@@ -172,6 +172,85 @@ async def test_async_list_dns_records_sends_expected_request(
 
 
 @respx.mock
+def test_sync_list_dns_records_sends_type_filter_params(
+    login_payload: dict[str, object],
+    dns_records_payload: dict[str, object],
+) -> None:
+    _mock_login(login_payload)
+    route = respx.get(
+        DNS_RECORDS_URL,
+        params={
+            "page": "1",
+            "per_page": "100",
+            "type": "a,aaaa,cname,aname",
+        },
+    ).mock(return_value=httpx.Response(200, json=dns_records_payload))
+
+    with ArvanCloud() as client:
+        client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        page = client.cdn.dns_records.list(
+            "snapp.ir",
+            record_types=["A", "AAAA", "cname", "ANAME"],
+            page=1,
+            per_page=100,
+        )
+
+    assert page.data[0].name == "home-1"
+    request = route.calls[0].request
+    assert request.method == "GET"
+    assert request.url.path == "/cdn/4.0/domains/snapp.ir/dns-records"
+    assert request.url.params["page"] == "1"
+    assert request.url.params["per_page"] == "100"
+    assert request.url.params["type"] == "a,aaaa,cname,aname"
+    assert request.headers["Authorization"] == (
+        "Bearer access-secret.af999c67-2a12-517c-b52b-8bb5e2b59bad"
+    )
+    _assert_no_browser_headers(request)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_async_list_dns_records_sends_search_match_and_type_params(
+    login_payload: dict[str, object],
+    dns_records_payload: dict[str, object],
+) -> None:
+    _mock_login(login_payload)
+    route = respx.get(
+        DNS_RECORDS_URL,
+        params={
+            "page": "1",
+            "per_page": "100",
+            "type": "aaaa",
+            "search": "sss",
+            "match_type": "exact",
+        },
+    ).mock(return_value=httpx.Response(200, json=dns_records_payload))
+
+    async with AsyncArvanCloud() as client:
+        await client.auth.login(TEST_EMAIL, TEST_PASSWORD)
+        page = await client.cdn.dns_records.list(
+            "snapp.ir",
+            search="sss",
+            match_type="exact",
+            record_types=["aaaa"],
+            page=1,
+            per_page=100,
+        )
+
+    assert page.data[0].name == "home-1"
+    request = route.calls[0].request
+    assert request.url.params["page"] == "1"
+    assert request.url.params["per_page"] == "100"
+    assert request.url.params["type"] == "aaaa"
+    assert request.url.params["search"] == "sss"
+    assert request.url.params["match_type"] == "exact"
+    assert request.headers["Authorization"] == (
+        "Bearer access-secret.af999c67-2a12-517c-b52b-8bb5e2b59bad"
+    )
+    _assert_no_browser_headers(request)
+
+
+@respx.mock
 def test_sync_create_dns_record_sends_expected_request_and_parses_fields(
     login_payload: dict[str, object],
     dns_record_create_response_payload: dict[str, object],
@@ -517,6 +596,38 @@ def test_delete_dns_record_rejects_invalid_record_id(record_id: str) -> None:
 )
 def test_list_dns_records_rejects_invalid_pagination(
     kwargs: dict[str, int],
+    message: str,
+) -> None:
+    with ArvanCloud() as client, pytest.raises(ValueError, match=message):
+        client.cdn.dns_records.list("snapp.ir", **kwargs)
+
+
+@pytest.mark.parametrize(
+    "record_types",
+    [
+        "bad",
+        ["a", "bad"],
+        [],
+        [" "],
+        ["a", 1],
+    ],
+)
+def test_list_dns_records_rejects_invalid_record_types(record_types: object) -> None:
+    with ArvanCloud() as client, pytest.raises(ValueError, match="record_types"):
+        client.cdn.dns_records.list("snapp.ir", record_types=record_types)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"search": ""}, "search"),
+        ({"search": " "}, "search"),
+        ({"match_type": ""}, "match_type"),
+        ({"match_type": " "}, "match_type"),
+    ],
+)
+def test_list_dns_records_rejects_blank_filter_values(
+    kwargs: dict[str, str],
     message: str,
 ) -> None:
     with ArvanCloud() as client, pytest.raises(ValueError, match=message):

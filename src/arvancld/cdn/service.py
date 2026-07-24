@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from collections.abc import Sequence
+from typing import Protocol, get_args
 from urllib.parse import quote
 from uuid import UUID
 
@@ -17,11 +18,15 @@ from arvancld.cdn.models import (
     DNSRecordCreateResponse,
     DNSRecordDeleteResult,
     DNSRecordPage,
+    DNSRecordType,
     DNSRecordUpdate,
     DNSRecordUpdateResponse,
 )
 from arvancld.config import ClientConfig
 from arvancld.exceptions import AuthenticationRequiredError
+
+DNSRecordTypeFilter = DNSRecordType | str | Sequence[DNSRecordType | str]
+_ALLOWED_DNS_RECORD_TYPES = set(get_args(DNSRecordType))
 
 
 class _TokenProvider(Protocol):
@@ -56,6 +61,64 @@ def _validate_record_id(record_id: UUID | str) -> str:
     if "/" in candidate:
         raise ValueError("record_id must not contain '/'")
     return candidate
+
+
+def _validate_optional_nonblank(name: str, value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    candidate = value.strip()
+    if not candidate:
+        raise ValueError(f"{name} must not be blank")
+    return candidate
+
+
+def _normalize_record_types(record_types: DNSRecordTypeFilter | None) -> str | None:
+    if record_types is None:
+        return None
+
+    values = [record_types] if isinstance(record_types, str) else list(record_types)
+
+    if not values:
+        raise ValueError("record_types must not be empty")
+
+    normalized: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            raise ValueError("record_types must contain strings")
+
+        candidate = value.strip().lower()
+        if candidate not in _ALLOWED_DNS_RECORD_TYPES:
+            raise ValueError("record_types contains an unsupported DNS record type")
+        normalized.append(candidate)
+
+    return ",".join(normalized)
+
+
+def _dns_record_list_params(
+    *,
+    page: int,
+    per_page: int,
+    record_types: DNSRecordTypeFilter | None,
+    search: str | None,
+    match_type: str | None,
+) -> dict[str, int | str]:
+    _validate_pagination(page, per_page)
+    params: dict[str, int | str] = {"page": page, "per_page": per_page}
+
+    normalized_record_types = _normalize_record_types(record_types)
+    if normalized_record_types is not None:
+        params["type"] = normalized_record_types
+
+    normalized_search = _validate_optional_nonblank("search", search)
+    if normalized_search is not None:
+        params["search"] = normalized_search
+
+    normalized_match_type = _validate_optional_nonblank("match_type", match_type)
+    if normalized_match_type is not None:
+        params["match_type"] = normalized_match_type
+
+    return params
 
 
 def _authorization_header(token_provider: _TokenProvider) -> dict[str, str]:
@@ -110,16 +173,25 @@ class DNSRecordService:
         *,
         page: int = 1,
         per_page: int = 25,
+        record_types: DNSRecordTypeFilter | None = None,
+        search: str | None = None,
+        match_type: str | None = None,
     ) -> DNSRecordPage:
         """List DNS records for a CDN domain."""
 
-        _validate_pagination(page, per_page)
+        params = _dns_record_list_params(
+            page=page,
+            per_page=per_page,
+            record_types=record_types,
+            search=search,
+            match_type=match_type,
+        )
         domain = quote(_validate_domain(domain), safe=".-")
         return self._transport.request_model(
             "GET",
             self._config.cdn_url(f"/domains/{domain}/dns-records"),
             model=DNSRecordPage,
-            params={"page": page, "per_page": per_page},
+            params=params,
             headers=_authorization_header(self._token_provider),
         )
 
@@ -235,16 +307,25 @@ class AsyncDNSRecordService:
         *,
         page: int = 1,
         per_page: int = 25,
+        record_types: DNSRecordTypeFilter | None = None,
+        search: str | None = None,
+        match_type: str | None = None,
     ) -> DNSRecordPage:
         """List DNS records for a CDN domain."""
 
-        _validate_pagination(page, per_page)
+        params = _dns_record_list_params(
+            page=page,
+            per_page=per_page,
+            record_types=record_types,
+            search=search,
+            match_type=match_type,
+        )
         domain = quote(_validate_domain(domain), safe=".-")
         return await self._transport.request_model(
             "GET",
             self._config.cdn_url(f"/domains/{domain}/dns-records"),
             model=DNSRecordPage,
-            params={"page": page, "per_page": per_page},
+            params=params,
             headers=_authorization_header(self._token_provider),
         )
 

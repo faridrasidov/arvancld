@@ -4,11 +4,24 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+DNSRecordType = Literal[
+    "a",
+    "aaaa",
+    "aname",
+    "cname",
+    "ns",
+    "mx",
+    "srv",
+    "txt",
+    "ptr",
+    "caa",
+    "tlsa",
+]
 DNSRecordValue = dict[str, Any] | list[dict[str, Any]]
 
 

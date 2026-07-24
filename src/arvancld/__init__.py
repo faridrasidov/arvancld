@@ -10,6 +10,7 @@ from arvancld.cdn import (
     DNSRecordDeleteResult,
     DNSRecordIPValue,
     DNSRecordPage,
+    DNSRecordType,
     DNSRecordUpdate,
     IPFilterMode,
 )
@@ -46,6 +47,7 @@ __all__ = [
     "DNSRecordDeleteResult",
     "DNSRecordIPValue",
     "DNSRecordPage",
+    "DNSRecordType",
     "DNSRecordUpdate",
     "IPFilterMode",
     "InvalidResponseError",

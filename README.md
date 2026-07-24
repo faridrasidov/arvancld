@@ -33,6 +33,10 @@ export ARVANCLD_PASSWORD="your-password"
 export ARVANCLD_DOMAIN="snapp.ir"
 export ARVANCLD_RECORD_ID="00000000-0000-4000-8000-000000000001"
 export ARVANCLD_SESSION=".arvancld-session.json"
+export ARVANCLD_DNS_RECORD_TYPES="a,aaaa,cname"
+export ARVANCLD_DNS_RECORD_TYPE="aaaa"
+export ARVANCLD_DNS_SEARCH="sss"
+export ARVANCLD_DNS_MATCH_TYPE="exact"
 ```
 
 PowerShell:
@@ -43,6 +47,10 @@ $env:ARVANCLD_PASSWORD = "your-password"
 $env:ARVANCLD_DOMAIN = "snapp.ir"
 $env:ARVANCLD_RECORD_ID = "00000000-0000-4000-8000-000000000001"
 $env:ARVANCLD_SESSION = ".arvancld-session.json"
+$env:ARVANCLD_DNS_RECORD_TYPES = "a,aaaa,cname"
+$env:ARVANCLD_DNS_RECORD_TYPE = "aaaa"
+$env:ARVANCLD_DNS_SEARCH = "sss"
+$env:ARVANCLD_DNS_MATCH_TYPE = "exact"
 ```
 
 Then log in:
@@ -155,6 +163,14 @@ import os
 
 from arvancld import ArvanCloud
 
+
+def optional_record_types() -> list[str] | None:
+    value = os.environ.get("ARVANCLD_DNS_RECORD_TYPES")
+    if value is None or not value.strip():
+        return None
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 with ArvanCloud() as client:
     client.auth.login(
         email=os.environ["ARVANCLD_EMAIL"],
@@ -165,6 +181,34 @@ with ArvanCloud() as client:
         os.environ["ARVANCLD_DOMAIN"],
         page=1,
         per_page=25,
+        record_types=optional_record_types(),
+        search=os.environ.get("ARVANCLD_DNS_SEARCH"),
+        match_type=os.environ.get("ARVANCLD_DNS_MATCH_TYPE"),
+    )
+    for record in records.data:
+        print(record.type, record.name, record.ttl)
+```
+
+Search with exact match and a single record type:
+
+```python
+import os
+
+from arvancld import ArvanCloud
+
+with ArvanCloud() as client:
+    client.auth.login(
+        email=os.environ["ARVANCLD_EMAIL"],
+        password=os.environ["ARVANCLD_PASSWORD"],
+    )
+
+    records = client.cdn.dns_records.list(
+        os.environ.get("ARVANCLD_DOMAIN", "snapp.ir"),
+        search=os.environ["ARVANCLD_DNS_SEARCH"],
+        match_type=os.environ.get("ARVANCLD_DNS_MATCH_TYPE", "exact"),
+        record_types=[os.environ.get("ARVANCLD_DNS_RECORD_TYPE", "aaaa")],
+        page=1,
+        per_page=100,
     )
     for record in records.data:
         print(record.type, record.name, record.ttl)
@@ -319,7 +363,12 @@ async def main() -> None:
         domains = await client.cdn.domains.list(page=1, per_page=5)
         print(f"Domains: {domains.meta.total}")
 
-        records = await client.cdn.dns_records.list(os.environ["ARVANCLD_DOMAIN"])
+        records = await client.cdn.dns_records.list(
+            os.environ["ARVANCLD_DOMAIN"],
+            record_types=["a", "aaaa", "cname"],
+            page=1,
+            per_page=100,
+        )
         print(f"DNS records: {records.meta.total}")
 
         created = await client.cdn.dns_records.create(
