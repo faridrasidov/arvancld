@@ -15,13 +15,13 @@ async def main() -> None:
 
     async with AsyncArvanCloud() as client:
         try:
-            client.auth.load_session(session_path)
+            await client.auth.aload_session(session_path)
         except (FileNotFoundError, InvalidSessionError, SessionExpiredError):
             await client.auth.login(
                 email=os.environ["ARVANCLD_EMAIL"],
                 password=os.environ["ARVANCLD_PASSWORD"],
             )
-            client.auth.save_session(session_path)
+            await client.auth.asave_session(session_path)
 
         page = await client.cdn.domains.list(
             page=int(os.environ.get("ARVANCLD_PAGE", "1")),

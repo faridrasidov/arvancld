@@ -15,4 +15,10 @@ All notable changes to `arvancld` will be documented in this file.
 - CDN DNS record update support.
 - CDN DNS record deletion support.
 - CDN DNS cloud proxy toggle support.
+- Lazy sync and async iteration across all CDN domain and DNS record pages.
+- Optional bounded async page prefetch with ordered results.
+- Configurable GET-only retries with bounded jitter and `Retry-After` support.
+- Native HTTPX granular timeout and connection-pool configuration.
+- Direct Pydantic validation from response bytes without an intermediate JSON object.
+- Non-blocking async session save, load, and clear methods.
 - Mocked pytest coverage for login, sessions, CDN domains, and DNS records.

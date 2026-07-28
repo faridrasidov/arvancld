@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from arvancld._transport import AsyncTransport, SyncTransport
@@ -108,6 +109,16 @@ class AsyncAuthService:
             )
         save_session_file(path, self._tokens)
 
+    async def asave_session(self, path: str | Path) -> None:
+        """Persist the current login result without blocking the event loop."""
+
+        tokens = self._tokens
+        if tokens is None:
+            raise AuthenticationRequiredError(
+                "A successful login is required before saving a session"
+            )
+        await asyncio.to_thread(save_session_file, path, tokens)
+
     def load_session(self, path: str | Path) -> LoginResult:
         """Load an unexpired saved session and retain its tokens in memory."""
 
@@ -115,8 +126,21 @@ class AsyncAuthService:
         self._tokens = tokens
         return tokens
 
+    async def aload_session(self, path: str | Path) -> LoginResult:
+        """Load a saved session without blocking the event loop."""
+
+        tokens = await asyncio.to_thread(load_session_file, path)
+        self._tokens = tokens
+        return tokens
+
     def clear_session(self, path: str | Path) -> None:
         """Delete a saved session file and clear the in-memory login state."""
 
         clear_session_file(path)
+        self._tokens = None
+
+    async def aclear_session(self, path: str | Path) -> None:
+        """Clear a saved session without blocking the event loop."""
+
+        await asyncio.to_thread(clear_session_file, path)
         self._tokens = None

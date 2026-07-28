@@ -145,7 +145,9 @@ with ArvanCloud() as client:
         print(domain.domain, domain.status)
 ```
 
-Async clients use the same local session file methods:
+Async clients keep the same synchronous methods for compatibility and also
+provide `aload_session()`, `asave_session()`, and `aclear_session()` to move
+filesystem work off the event loop:
 
 ```python
 import asyncio
@@ -160,13 +162,13 @@ async def main() -> None:
 
     async with AsyncArvanCloud() as client:
         try:
-            client.auth.load_session(session_path)
+            await client.auth.aload_session(session_path)
         except (FileNotFoundError, InvalidSessionError, SessionExpiredError):
             await client.auth.login(
                 email=os.environ["ARVANCLD_EMAIL"],
                 password=os.environ["ARVANCLD_PASSWORD"],
             )
-            client.auth.save_session(session_path)
+            await client.auth.asave_session(session_path)
 
         domains = await client.cdn.domains.list()
         for domain in domains.data:
@@ -207,6 +209,43 @@ with ArvanCloud() as client:
     )
     for record in records.data:
         print(record.type, record.name, record.ttl)
+```
+
+## Iterate through every page lazily
+
+Use `iter_all()` when you want items rather than a single pagination envelope.
+The existing endpoint defaults remain `5` domains and `25` DNS records per
+request:
+
+```python
+with ArvanCloud() as client:
+    client.auth.load_session(".arvancld-session.json")
+
+    for domain in client.cdn.domains.iter_all():
+        print(domain.domain)
+
+    for record in client.cdn.dns_records.iter_all(
+        "snapp.ir",
+        per_page=100,
+        record_types=["a", "aaaa"],
+    ):
+        print(record.name)
+```
+
+`per_page=100` can reduce network round trips when the endpoint accepts it. This
+SDK does not assume a universal page-size ceiling because one has not been
+verified; choose a larger value explicitly for the endpoint and account you use.
+
+Async iterators are sequential by default. Set `prefetch` above `1` to load a
+bounded number of future pages concurrently while preserving page order:
+
+```python
+async for record in client.cdn.dns_records.iter_all(
+    "snapp.ir",
+    per_page=100,
+    prefetch=4,
+):
+    print(record.name)
 ```
 
 Supported DNS record type filters:
@@ -371,8 +410,31 @@ Both clients accept these keyword arguments:
 - `auth_base_url`: defaults to `https://dejban.arvancloud.ir`
 - `cdn_base_url`: defaults to `https://napi.arvancloud.ir/cdn/4.0`
 - `redirect_uri`: defaults to `https://panel.arvancloud.ir/`
-- `timeout`: request timeout in seconds, defaulting to `30.0`
+- `timeout`: a timeout in seconds or `httpx.Timeout`, defaulting to `30.0`
 - `user_agent`: defaults to `arvancld/0.1.0`
+- `limits`: optional native `httpx.Limits`; HTTPX defaults are used when omitted
+- `retry_policy`: defaults to `RetryPolicy()`; pass `None` for single-attempt
+  requests
+
+Default retries apply only to `GET` requests. The client makes up to three
+attempts for timeouts, network failures, remote protocol failures, and HTTP
+`429`, `502`, `503`, or `504` responses. It respects a bounded `Retry-After`
+header. Login and every DNS mutation remain single-attempt operations.
+
+```python
+import httpx
+
+from arvancld import ArvanCloud, RetryPolicy
+
+client = ArvanCloud(
+    timeout=httpx.Timeout(connect=5, read=30, write=10, pool=5),
+    limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
+    retry_policy=RetryPolicy(max_attempts=3),
+)
+
+# Disable automatic GET retries:
+single_attempt_client = ArvanCloud(retry_policy=None)
+```
 
 ## Credential handling
 
@@ -383,6 +445,8 @@ Both clients accept these keyword arguments:
 - `client.auth.load_session(path)` restores unexpired saved tokens into memory.
 - `client.auth.clear_session(path)` deletes the local session file and clears
   in-memory tokens.
+- Async clients can await the corresponding `asave_session`, `aload_session`,
+  and `aclear_session` methods to avoid blocking the event loop.
 - CDN requests build ArvanCloud's account-scoped bearer header from the login
   `accessToken` and `defaultAccount` values in memory.
 - Token fields are excluded from model representations.

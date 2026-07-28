@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from copy import deepcopy
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -17,6 +19,7 @@ from arvancld import (
     AsyncArvanCloud,
     AuthenticationError,
     AuthenticationRequiredError,
+    CDNDomainPage,
     InvalidResponseError,
     NetworkError,
 )
@@ -42,6 +45,22 @@ def _assert_no_browser_headers(request: httpx.Request) -> None:
         "sec-gpc",
     }
     assert forbidden_headers.isdisjoint(request.headers)
+
+
+def _domain_page(
+    payload: dict[str, object],
+    *,
+    page: int,
+    last_page: int,
+    domain: str,
+) -> CDNDomainPage:
+    page_payload = deepcopy(payload)
+    page_payload["data"][0]["domain"] = domain  # type: ignore[index]
+    page_payload["data"][0]["name"] = domain  # type: ignore[index]
+    page_payload["meta"]["current_page"] = page  # type: ignore[index]
+    page_payload["meta"]["last_page"] = last_page  # type: ignore[index]
+    page_payload["meta"]["total"] = last_page  # type: ignore[index]
+    return CDNDomainPage.model_validate(page_payload)
 
 
 @respx.mock
@@ -114,6 +133,128 @@ async def test_async_list_domains_sends_expected_request(
     assert request.url.params["perPage"] == "10"
 
 
+def test_sync_iter_all_domains_is_lazy_and_preserves_page_order(
+    monkeypatch: pytest.MonkeyPatch,
+    cdn_domain_payload: dict[str, object],
+) -> None:
+    calls: list[tuple[int, int]] = []
+
+    with ArvanCloud() as client:
+
+        def fake_list(*, page: int = 1, per_page: int = 5) -> CDNDomainPage:
+            calls.append((page, per_page))
+            return _domain_page(
+                cdn_domain_payload,
+                page=page,
+                last_page=3,
+                domain=f"page-{page}.example",
+            )
+
+        monkeypatch.setattr(client.cdn.domains, "list", fake_list)
+        iterator = client.cdn.domains.iter_all()
+
+        assert calls == []
+        assert [domain.domain for domain in iterator] == [
+            "page-1.example",
+            "page-2.example",
+            "page-3.example",
+        ]
+
+    assert calls == [(1, 5), (2, 5), (3, 5)]
+
+
+@pytest.mark.asyncio
+async def test_async_iter_all_domains_prefetches_with_a_bound_and_preserves_order(
+    monkeypatch: pytest.MonkeyPatch,
+    cdn_domain_payload: dict[str, object],
+) -> None:
+    calls: list[int] = []
+    active = 0
+    peak_active = 0
+
+    async with AsyncArvanCloud() as client:
+
+        async def fake_list(*, page: int = 1, per_page: int = 5) -> CDNDomainPage:
+            nonlocal active, peak_active
+            calls.append(page)
+            if page > 1:
+                active += 1
+                peak_active = max(peak_active, active)
+                try:
+                    await asyncio.sleep({2: 0.03, 3: 0.01, 4: 0.0}[page])
+                finally:
+                    active -= 1
+            return _domain_page(
+                cdn_domain_payload,
+                page=page,
+                last_page=4,
+                domain=f"page-{page}.example",
+            )
+
+        monkeypatch.setattr(client.cdn.domains, "list", fake_list)
+        domains = [domain.domain async for domain in client.cdn.domains.iter_all(prefetch=2)]
+
+    assert domains == [
+        "page-1.example",
+        "page-2.example",
+        "page-3.example",
+        "page-4.example",
+    ]
+    assert calls == [1, 2, 3, 4]
+    assert peak_active == 2
+
+
+@pytest.mark.asyncio
+async def test_async_iter_all_domains_cancels_prefetched_pages_when_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    cdn_domain_payload: dict[str, object],
+) -> None:
+    page_three_started = asyncio.Event()
+    page_three_cancelled = asyncio.Event()
+
+    async with AsyncArvanCloud() as client:
+
+        async def fake_list(*, page: int = 1, per_page: int = 5) -> CDNDomainPage:
+            if page == 3:
+                page_three_started.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    page_three_cancelled.set()
+                    raise
+            return _domain_page(
+                cdn_domain_payload,
+                page=page,
+                last_page=3,
+                domain=f"page-{page}.example",
+            )
+
+        monkeypatch.setattr(client.cdn.domains, "list", fake_list)
+        iterator = client.cdn.domains.iter_all(prefetch=2)
+
+        assert (await anext(iterator)).domain == "page-1.example"
+        assert (await anext(iterator)).domain == "page-2.example"
+        await page_three_started.wait()
+        await iterator.aclose()
+
+    assert page_three_cancelled.is_set()
+
+
+def test_sync_iter_all_domains_rejects_invalid_page_size_before_request() -> None:
+    with ArvanCloud() as client:
+        iterator = client.cdn.domains.iter_all(per_page=0)
+        with pytest.raises(ValueError, match="per_page"):
+            next(iterator)
+
+
+@pytest.mark.asyncio
+async def test_async_iter_all_domains_rejects_invalid_prefetch_before_request() -> None:
+    async with AsyncArvanCloud() as client:
+        iterator = client.cdn.domains.iter_all(prefetch=0)
+        with pytest.raises(ValueError, match="prefetch"):
+            await anext(iterator)
+
+
 def test_list_domains_requires_login() -> None:
     with ArvanCloud() as client, pytest.raises(AuthenticationRequiredError) as captured:
         client.cdn.domains.list()
@@ -184,7 +325,7 @@ def test_list_domains_maps_timeout_without_leaking_token(
         side_effect=httpx.ReadTimeout("transport timed out")
     )
 
-    with ArvanCloud() as client, pytest.raises(ArvanCloudTimeoutError) as captured:
+    with ArvanCloud(retry_policy=None) as client, pytest.raises(ArvanCloudTimeoutError) as captured:
         client.auth.login(TEST_EMAIL, TEST_PASSWORD)
         client.cdn.domains.list()
 
@@ -200,7 +341,7 @@ def test_list_domains_maps_network_failure_without_leaking_token(
         side_effect=httpx.ConnectError("connection failed")
     )
 
-    with ArvanCloud() as client, pytest.raises(NetworkError) as captured:
+    with ArvanCloud(retry_policy=None) as client, pytest.raises(NetworkError) as captured:
         client.auth.login(TEST_EMAIL, TEST_PASSWORD)
         client.cdn.domains.list()
 

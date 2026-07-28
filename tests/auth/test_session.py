@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -13,11 +14,14 @@ import httpx
 import pytest
 import respx
 
+import arvancld.auth.service as auth_service_module
 from arvancld import (
     ArvanCloud,
     AsyncArvanCloud,
     AuthenticationRequiredError,
     InvalidSessionError,
+    LoginResult,
+    SessionError,
     SessionExpiredError,
 )
 
@@ -126,6 +130,107 @@ async def test_async_client_can_use_loaded_session_without_login(
     assert route.calls[0].request.headers["Authorization"] == (
         f"Bearer {ACCESS_TOKEN}.{DEFAULT_ACCOUNT}"
     )
+
+
+@pytest.mark.asyncio
+async def test_async_session_file_methods_run_off_event_loop(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    login_payload: dict[str, object],
+) -> None:
+    source_path = tmp_path / "source-session.json"
+    saved_path = tmp_path / "saved-session.json"
+    _write_session(source_path, _session_payload(login_payload))
+    event_loop_thread = threading.get_ident()
+    worker_threads: list[int] = []
+    original_load = auth_service_module.load_session_file
+    original_save = auth_service_module.save_session_file
+    original_clear = auth_service_module.clear_session_file
+
+    def tracked_load(path: str | Path) -> LoginResult:
+        worker_threads.append(threading.get_ident())
+        return original_load(path)
+
+    def tracked_save(path: str | Path, tokens: LoginResult) -> None:
+        worker_threads.append(threading.get_ident())
+        original_save(path, tokens)
+
+    def tracked_clear(path: str | Path) -> None:
+        worker_threads.append(threading.get_ident())
+        original_clear(path)
+
+    monkeypatch.setattr(auth_service_module, "load_session_file", tracked_load)
+    monkeypatch.setattr(auth_service_module, "save_session_file", tracked_save)
+    monkeypatch.setattr(auth_service_module, "clear_session_file", tracked_clear)
+
+    async with AsyncArvanCloud() as client:
+        loaded = await client.auth.aload_session(source_path)
+        await client.auth.asave_session(saved_path)
+
+        assert client.auth.tokens is loaded
+        assert saved_path.exists()
+
+        await client.auth.aclear_session(saved_path)
+
+        assert client.auth.tokens is None
+        assert not saved_path.exists()
+
+    assert len(worker_threads) == 3
+    assert all(thread_id != event_loop_thread for thread_id in worker_threads)
+
+
+@pytest.mark.asyncio
+async def test_async_session_load_failure_keeps_existing_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    login_payload: dict[str, object],
+) -> None:
+    session_path = tmp_path / "session.json"
+    _write_session(session_path, _session_payload(login_payload))
+
+    async with AsyncArvanCloud() as client:
+        existing_tokens = await client.auth.aload_session(session_path)
+
+        def fail_load(path: str | Path) -> LoginResult:
+            raise InvalidSessionError("load failed")
+
+        monkeypatch.setattr(auth_service_module, "load_session_file", fail_load)
+
+        with pytest.raises(InvalidSessionError, match="load failed"):
+            await client.auth.aload_session(session_path)
+
+        assert client.auth.tokens is existing_tokens
+
+
+@pytest.mark.asyncio
+async def test_async_session_clear_failure_keeps_existing_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    login_payload: dict[str, object],
+) -> None:
+    session_path = tmp_path / "session.json"
+    _write_session(session_path, _session_payload(login_payload))
+
+    async with AsyncArvanCloud() as client:
+        existing_tokens = await client.auth.aload_session(session_path)
+
+        def fail_clear(path: str | Path) -> None:
+            raise SessionError("clear failed")
+
+        monkeypatch.setattr(auth_service_module, "clear_session_file", fail_clear)
+
+        with pytest.raises(SessionError, match="clear failed"):
+            await client.auth.aclear_session(session_path)
+
+        assert client.auth.tokens is existing_tokens
+        assert session_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_async_save_session_requires_login(tmp_path: Path) -> None:
+    async with AsyncArvanCloud() as client:
+        with pytest.raises(AuthenticationRequiredError):
+            await client.auth.asave_session(tmp_path / "session.json")
 
 
 def test_load_session_missing_file_raises_file_not_found(tmp_path: Path) -> None:

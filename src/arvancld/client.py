@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from types import TracebackType
 
+import httpx
+
 from arvancld._transport import AsyncTransport, SyncTransport
 from arvancld.auth.service import AsyncAuthService, AuthService
 from arvancld.cdn.service import AsyncCDNService, CDNService
@@ -12,9 +14,11 @@ from arvancld.config import (
     DEFAULT_AUTH_BASE_URL,
     DEFAULT_CDN_BASE_URL,
     DEFAULT_REDIRECT_URI,
+    DEFAULT_RETRY_POLICY,
     DEFAULT_TIMEOUT,
     DEFAULT_USER_AGENT,
     ClientConfig,
+    RetryPolicy,
 )
 
 
@@ -27,8 +31,10 @@ class ArvanCloud:
         auth_base_url: str = DEFAULT_AUTH_BASE_URL,
         cdn_base_url: str = DEFAULT_CDN_BASE_URL,
         redirect_uri: str = DEFAULT_REDIRECT_URI,
-        timeout: float = DEFAULT_TIMEOUT,
+        timeout: float | httpx.Timeout = DEFAULT_TIMEOUT,
         user_agent: str = DEFAULT_USER_AGENT,
+        limits: httpx.Limits | None = None,
+        retry_policy: RetryPolicy | None = DEFAULT_RETRY_POLICY,
     ) -> None:
         self.config = ClientConfig(
             auth_base_url=auth_base_url,
@@ -36,6 +42,8 @@ class ArvanCloud:
             redirect_uri=redirect_uri,
             timeout=timeout,
             user_agent=user_agent,
+            limits=limits,
+            retry_policy=retry_policy,
         )
         self._transport = SyncTransport(self.config)
         self.auth = AuthService(self._transport, self.config)
@@ -73,8 +81,10 @@ class AsyncArvanCloud:
         auth_base_url: str = DEFAULT_AUTH_BASE_URL,
         cdn_base_url: str = DEFAULT_CDN_BASE_URL,
         redirect_uri: str = DEFAULT_REDIRECT_URI,
-        timeout: float = DEFAULT_TIMEOUT,
+        timeout: float | httpx.Timeout = DEFAULT_TIMEOUT,
         user_agent: str = DEFAULT_USER_AGENT,
+        limits: httpx.Limits | None = None,
+        retry_policy: RetryPolicy | None = DEFAULT_RETRY_POLICY,
     ) -> None:
         self.config = ClientConfig(
             auth_base_url=auth_base_url,
@@ -82,6 +92,8 @@ class AsyncArvanCloud:
             redirect_uri=redirect_uri,
             timeout=timeout,
             user_agent=user_agent,
+            limits=limits,
+            retry_policy=retry_policy,
         )
         self._transport = AsyncTransport(self.config)
         self.auth = AsyncAuthService(self._transport, self.config)

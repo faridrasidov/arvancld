@@ -15,7 +15,7 @@ from arvancld.cdn import (
     IPFilterMode,
 )
 from arvancld.client import ArvanCloud, AsyncArvanCloud
-from arvancld.config import ClientConfig
+from arvancld.config import ClientConfig, RetryPolicy
 from arvancld.exceptions import (
     APIError,
     ArvanCloudError,
@@ -54,6 +54,7 @@ __all__ = [
     "InvalidSessionError",
     "LoginResult",
     "NetworkError",
+    "RetryPolicy",
     "SessionError",
     "SessionExpiredError",
     "StoredSession",

@@ -3,14 +3,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Protocol, get_args
+import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Sequence
+from contextlib import aclosing
+from typing import Protocol, TypeVar, get_args
 from urllib.parse import quote
 from uuid import UUID
 
 from arvancld._transport import AsyncTransport, SyncTransport
 from arvancld.auth.models import LoginResult
 from arvancld.cdn.models import (
+    CDNDomain,
     CDNDomainPage,
     DNSRecord,
     DNSRecordCloudUpdateResponse,
@@ -27,6 +30,7 @@ from arvancld.exceptions import AuthenticationRequiredError
 
 DNSRecordTypeFilter = DNSRecordType | str | Sequence[DNSRecordType | str]
 _ALLOWED_DNS_RECORD_TYPES = set(get_args(DNSRecordType))
+PageT = TypeVar("PageT", CDNDomainPage, DNSRecordPage)
 
 
 class _TokenProvider(Protocol):
@@ -40,6 +44,42 @@ def _validate_pagination(page: int, per_page: int) -> None:
         raise ValueError("page must be greater than zero")
     if per_page < 1:
         raise ValueError("per_page must be greater than zero")
+
+
+def _validate_prefetch(prefetch: int) -> None:
+    if prefetch < 1:
+        raise ValueError("prefetch must be greater than zero")
+
+
+async def _iter_async_pages(
+    fetch_page: Callable[[int], Awaitable[PageT]],
+    *,
+    prefetch: int,
+) -> AsyncIterator[PageT]:
+    """Yield an initial page and its remaining pages in order with bounded prefetch."""
+
+    _validate_prefetch(prefetch)
+    first_page = await fetch_page(1)
+    yield first_page
+
+    last_page = first_page.meta.last_page
+    pending: dict[int, asyncio.Task[PageT]] = {}
+    next_page_to_schedule = 2
+
+    try:
+        for page_number in range(2, last_page + 1):
+            while next_page_to_schedule <= last_page and len(pending) < prefetch:
+                pending[next_page_to_schedule] = asyncio.create_task(
+                    fetch_page(next_page_to_schedule)
+                )
+                next_page_to_schedule += 1
+
+            yield await pending.pop(page_number)
+    finally:
+        for task in pending.values():
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending.values(), return_exceptions=True)
 
 
 def _validate_domain(domain: str) -> str:
@@ -153,6 +193,17 @@ class DomainService:
             headers=_authorization_header(self._token_provider),
         )
 
+    def iter_all(self, *, per_page: int = 5) -> Iterator[CDNDomain]:
+        """Yield all CDN domains lazily in page order."""
+
+        _validate_pagination(1, per_page)
+        first_page = self.list(page=1, per_page=per_page)
+        yield from first_page.data
+
+        for page_number in range(2, first_page.meta.last_page + 1):
+            page = self.list(page=page_number, per_page=per_page)
+            yield from page.data
+
 
 class DNSRecordService:
     """Synchronous CDN DNS record operations."""
@@ -194,6 +245,39 @@ class DNSRecordService:
             params=params,
             headers=_authorization_header(self._token_provider),
         )
+
+    def iter_all(
+        self,
+        domain: str,
+        *,
+        per_page: int = 25,
+        record_types: DNSRecordTypeFilter | None = None,
+        search: str | None = None,
+        match_type: str | None = None,
+    ) -> Iterator[DNSRecord]:
+        """Yield all DNS records for a CDN domain lazily in page order."""
+
+        _validate_pagination(1, per_page)
+        first_page = self.list(
+            domain,
+            page=1,
+            per_page=per_page,
+            record_types=record_types,
+            search=search,
+            match_type=match_type,
+        )
+        yield from first_page.data
+
+        for page_number in range(2, first_page.meta.last_page + 1):
+            page = self.list(
+                domain,
+                page=page_number,
+                per_page=per_page,
+                record_types=record_types,
+                search=search,
+                match_type=match_type,
+            )
+            yield from page.data
 
     def create(self, domain: str, record: DNSRecordCreate) -> DNSRecord:
         """Create a DNS record for a CDN domain."""
@@ -287,6 +371,24 @@ class AsyncDomainService:
             headers=_authorization_header(self._token_provider),
         )
 
+    async def iter_all(
+        self,
+        *,
+        per_page: int = 5,
+        prefetch: int = 1,
+    ) -> AsyncIterator[CDNDomain]:
+        """Yield all CDN domains lazily in page order."""
+
+        _validate_pagination(1, per_page)
+
+        async def fetch_page(page_number: int) -> CDNDomainPage:
+            return await self.list(page=page_number, per_page=per_page)
+
+        async with aclosing(_iter_async_pages(fetch_page, prefetch=prefetch)) as pages:
+            async for page in pages:
+                for domain in page.data:
+                    yield domain
+
 
 class AsyncDNSRecordService:
     """Asynchronous CDN DNS record operations."""
@@ -328,6 +430,35 @@ class AsyncDNSRecordService:
             params=params,
             headers=_authorization_header(self._token_provider),
         )
+
+    async def iter_all(
+        self,
+        domain: str,
+        *,
+        per_page: int = 25,
+        record_types: DNSRecordTypeFilter | None = None,
+        search: str | None = None,
+        match_type: str | None = None,
+        prefetch: int = 1,
+    ) -> AsyncIterator[DNSRecord]:
+        """Yield all DNS records for a CDN domain lazily in page order."""
+
+        _validate_pagination(1, per_page)
+
+        async def fetch_page(page_number: int) -> DNSRecordPage:
+            return await self.list(
+                domain,
+                page=page_number,
+                per_page=per_page,
+                record_types=record_types,
+                search=search,
+                match_type=match_type,
+            )
+
+        async with aclosing(_iter_async_pages(fetch_page, prefetch=prefetch)) as pages:
+            async for page in pages:
+                for record in page.data:
+                    yield record
 
     async def create(self, domain: str, record: DNSRecordCreate) -> DNSRecord:
         """Create a DNS record for a CDN domain."""

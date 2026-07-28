@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -21,6 +22,7 @@ from arvancld import (
     AuthenticationRequiredError,
     DNSRecordCreate,
     DNSRecordIPValue,
+    DNSRecordPage,
     DNSRecordUpdate,
     InvalidResponseError,
     IPFilterMode,
@@ -99,6 +101,21 @@ def _assert_no_browser_headers(request: httpx.Request) -> None:
         "sec-gpc",
     }
     assert forbidden_headers.isdisjoint(request.headers)
+
+
+def _dns_record_page(
+    payload: dict[str, object],
+    *,
+    page: int,
+    last_page: int,
+) -> DNSRecordPage:
+    page_payload = deepcopy(payload)
+    for index, record in enumerate(page_payload["data"]):  # type: ignore[union-attr]
+        record["name"] = f"page-{page}-record-{index}"  # type: ignore[index]
+    page_payload["meta"]["current_page"] = page  # type: ignore[index]
+    page_payload["meta"]["last_page"] = last_page  # type: ignore[index]
+    page_payload["meta"]["total"] = last_page * 2  # type: ignore[index]
+    return DNSRecordPage.model_validate(page_payload)
 
 
 @respx.mock
@@ -206,6 +223,159 @@ def test_sync_list_dns_records_sends_type_filter_params(
         "Bearer access-secret.af999c67-2a12-517c-b52b-8bb5e2b59bad"
     )
     _assert_no_browser_headers(request)
+
+
+def test_sync_iter_all_dns_records_forwards_filters_and_preserves_order(
+    monkeypatch: pytest.MonkeyPatch,
+    dns_records_payload: dict[str, object],
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    with ArvanCloud() as client:
+
+        def fake_list(
+            domain: str,
+            *,
+            page: int = 1,
+            per_page: int = 25,
+            record_types: object = None,
+            search: str | None = None,
+            match_type: str | None = None,
+        ) -> DNSRecordPage:
+            calls.append(
+                {
+                    "domain": domain,
+                    "page": page,
+                    "per_page": per_page,
+                    "record_types": record_types,
+                    "search": search,
+                    "match_type": match_type,
+                }
+            )
+            return _dns_record_page(dns_records_payload, page=page, last_page=2)
+
+        monkeypatch.setattr(client.cdn.dns_records, "list", fake_list)
+        names = [
+            record.name
+            for record in client.cdn.dns_records.iter_all(
+                "snapp.ir",
+                per_page=100,
+                record_types=["A", "AAAA"],
+                search="home",
+                match_type="exact",
+            )
+        ]
+
+    assert names == [
+        "page-1-record-0",
+        "page-1-record-1",
+        "page-2-record-0",
+        "page-2-record-1",
+    ]
+    assert calls == [
+        {
+            "domain": "snapp.ir",
+            "page": page,
+            "per_page": 100,
+            "record_types": ["A", "AAAA"],
+            "search": "home",
+            "match_type": "exact",
+        }
+        for page in (1, 2)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_async_iter_all_dns_records_is_sequential_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+    dns_records_payload: dict[str, object],
+) -> None:
+    calls: list[int] = []
+
+    async with AsyncArvanCloud() as client:
+
+        async def fake_list(
+            domain: str,
+            *,
+            page: int = 1,
+            per_page: int = 25,
+            record_types: object = None,
+            search: str | None = None,
+            match_type: str | None = None,
+        ) -> DNSRecordPage:
+            calls.append(page)
+            return _dns_record_page(dns_records_payload, page=page, last_page=2)
+
+        monkeypatch.setattr(client.cdn.dns_records, "list", fake_list)
+        names = [record.name async for record in client.cdn.dns_records.iter_all("snapp.ir")]
+
+    assert names == [
+        "page-1-record-0",
+        "page-1-record-1",
+        "page-2-record-0",
+        "page-2-record-1",
+    ]
+    assert calls == [1, 2]
+
+
+def test_sync_iter_all_dns_records_stops_after_empty_single_page(
+    monkeypatch: pytest.MonkeyPatch,
+    dns_records_payload: dict[str, object],
+) -> None:
+    calls = 0
+
+    with ArvanCloud() as client:
+
+        def fake_list(
+            domain: str,
+            *,
+            page: int = 1,
+            per_page: int = 25,
+            record_types: object = None,
+            search: str | None = None,
+            match_type: str | None = None,
+        ) -> DNSRecordPage:
+            nonlocal calls
+            calls += 1
+            return _dns_record_page(
+                dns_records_payload,
+                page=1,
+                last_page=1,
+            ).model_copy(update={"data": []})
+
+        monkeypatch.setattr(client.cdn.dns_records, "list", fake_list)
+        assert list(client.cdn.dns_records.iter_all("snapp.ir")) == []
+
+    assert calls == 1
+
+
+def test_sync_iter_all_dns_records_propagates_mid_pagination_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    dns_records_payload: dict[str, object],
+) -> None:
+    calls: list[int] = []
+
+    with ArvanCloud() as client:
+
+        def fake_list(
+            domain: str,
+            *,
+            page: int = 1,
+            per_page: int = 25,
+            record_types: object = None,
+            search: str | None = None,
+            match_type: str | None = None,
+        ) -> DNSRecordPage:
+            calls.append(page)
+            if page == 2:
+                raise NetworkError("page failed")
+            return _dns_record_page(dns_records_payload, page=1, last_page=2)
+
+        monkeypatch.setattr(client.cdn.dns_records, "list", fake_list)
+        with pytest.raises(NetworkError, match="page failed"):
+            list(client.cdn.dns_records.iter_all("snapp.ir"))
+
+    assert calls == [1, 2]
 
 
 @respx.mock
@@ -895,7 +1065,7 @@ def test_list_dns_records_maps_timeout_without_leaking_token(
         side_effect=httpx.ReadTimeout("transport timed out")
     )
 
-    with ArvanCloud() as client, pytest.raises(ArvanCloudTimeoutError) as captured:
+    with ArvanCloud(retry_policy=None) as client, pytest.raises(ArvanCloudTimeoutError) as captured:
         client.auth.login(TEST_EMAIL, TEST_PASSWORD)
         client.cdn.dns_records.list("snapp.ir")
 
@@ -972,7 +1142,7 @@ def test_list_dns_records_maps_network_failure_without_leaking_token(
         side_effect=httpx.ConnectError("connection failed")
     )
 
-    with ArvanCloud() as client, pytest.raises(NetworkError) as captured:
+    with ArvanCloud(retry_policy=None) as client, pytest.raises(NetworkError) as captured:
         client.auth.login(TEST_EMAIL, TEST_PASSWORD)
         client.cdn.dns_records.list("snapp.ir")
 
