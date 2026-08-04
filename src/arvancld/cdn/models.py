@@ -145,12 +145,21 @@ class DNSRecordCreate(BaseModel):
     cloud: bool
     value: DNSRecordCreateValue
     ttl: int
-    upstream_https: str
-    ip_filter_mode: IPFilterMode
+    upstream_https: str | None
+    ip_filter_mode: IPFilterMode | None
 
-    @field_validator("type", "name", "upstream_https")
+    @field_validator("type", "name")
     @classmethod
     def ensure_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("field must not be blank")
+        return value
+
+    @field_validator("upstream_https")
+    @classmethod
+    def ensure_upstream_https_present(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         if not value.strip():
             raise ValueError("field must not be blank")
         return value

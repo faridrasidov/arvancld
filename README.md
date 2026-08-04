@@ -92,6 +92,73 @@ $env:ARVANCLD_DNS_SEARCH = "sss"
 $env:ARVANCLD_DNS_MATCH_TYPE = "exact"
 ```
 
+## Certbot DNS-01 helpers
+
+The following scripts automate ACME DNS-01 challenge updates with ArvanCloud DNS.
+
+`generate_ssl.py` and the hook script load `.env` automatically when present in the current
+working directory or project root.
+
+Required environment for the hook:
+
+```powershell
+$env:ARVANCLD_EMAIL = "you@example.com"
+$env:ARVANCLD_PASSWORD = "your-password"
+$env:ARVANCLD_SESSION = ".arvancld-session.json"
+```
+
+Wildcard and apex certificates use the same ArvanCloud zone. For `*.example.com`
+and `example.com`, the hook creates/cleans `_acme-challenge.example.com`
+TXT challenge entries using the zone-relative challenge name (`_acme-challenge`).
+
+The hook sends TXT challenge payloads as ArvanCloud DNS API JSON like:
+
+```json
+{"type":"TXT","name":"_acme-challenge","cloud":false,"value":{"text":"<token>"},"ttl":120,"upstream_https":null,"ip_filter_mode":null}
+```
+
+Supported certificate generation env vars:
+
+```powershell
+$env:ARVANCLD_CERTBOT_DOMAINS = "snapp.ir,www.snapp.ir"
+$env:ARVANCLD_CERTBOT_KEY_TYPE = "ecdsa"
+$env:ARVANCLD_CERTBOT_STAGING = "true"
+$env:ARVANCLD_CERTBOT_DRY_RUN = "true"
+$env:ARVANCLD_CERTBOT_AGREE_TOS = "true"
+```
+
+Optional renew env vars:
+
+```powershell
+$env:ARVANCLD_CERTBOT_DEPLOY_HOOK = "python examples/certbot_arvancld_dns_hook.py --mode cleanup"
+```
+
+Hook usage (single-domain challenge context):
+
+```bash
+python examples/certbot_arvancld_dns_hook.py --mode auth
+python examples/certbot_arvancld_dns_hook.py --mode cleanup
+```
+
+`CERTBOT_DOMAIN` and `CERTBOT_VALIDATION` are expected by the hook and passed by
+Certbot automatically during challenge handling.
+
+Issue certificates:
+
+```bash
+python examples/generate_ssl.py --domain snapp.ir --domain www.snapp.ir --staging --dry-run --agree-tos --key-type ecdsa
+python examples/generate_ssl.py --domain snapp.ir --staging --email ops@example.com
+python examples/generate_ssl.py --force
+```
+
+Renew certificates:
+
+```bash
+python examples/renew_ssl.py --dry-run
+python examples/renew_ssl.py --force
+python examples/renew_ssl.py --deploy-hook "python examples/certbot_arvancld_dns_hook.py --mode cleanup"
+```
+
 ## Quickstart: login and list CDN domains
 
 ```python
