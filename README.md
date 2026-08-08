@@ -19,7 +19,7 @@ between local runs.
 
 - Typed sync client: `ArvanCloud`
 - Typed async client: `AsyncArvanCloud`
-- Account login through `dejban.arvancloud.ir`
+- Account login and token refresh through `dejban.arvancloud.ir`
 - Explicit JSON session persistence for local token reuse
 - ArvanCloud CDN v4.0 domain listing
 - ArvanCloud CDN DNS record listing with pagination, type filters, search, and
@@ -32,7 +32,7 @@ between local runs.
 
 | SDK area | API host | Implemented operations |
 | --- | --- | --- |
-| Account auth | `https://dejban.arvancloud.ir` | Login |
+| Account auth | `https://dejban.arvancloud.ir` | Login, token refresh |
 | CDN v4.0 | `https://napi.arvancloud.ir/cdn/4.0` | List domains |
 | CDN v4.0 DNS records | `https://napi.arvancloud.ir/cdn/4.0` | List, search, create, update, delete, cloud proxy toggle |
 
@@ -185,9 +185,11 @@ plaintext JSON, so treat them like browser cookies or local session data. Keep
 them outside source control; common `.arvancld-session*.json` filenames are
 ignored by this repository.
 
-Refresh is not implemented yet because the refresh endpoint contract has not
-been captured. If a saved session is expired, load raises `SessionExpiredError`
-and you should log in again.
+Call `client.auth.refresh()` after a server rejects a loaded access token, then
+save the session again so the rotated access and refresh tokens are persisted.
+The async client exposes `await client.auth.refresh()`. If a saved session is
+already expired locally, loading still raises `SessionExpiredError` and you
+should log in again.
 
 ```python
 import os
@@ -486,7 +488,8 @@ Both clients accept these keyword arguments:
 Default retries apply only to `GET` requests. The client makes up to three
 attempts for timeouts, network failures, remote protocol failures, and HTTP
 `429`, `502`, `503`, or `504` responses. It respects a bounded `Retry-After`
-header. Login and every DNS mutation remain single-attempt operations.
+header. Login, token refresh, and every DNS mutation remain single-attempt
+operations.
 
 ```python
 import httpx
@@ -507,6 +510,8 @@ single_attempt_client = ArvanCloud(retry_policy=None)
 
 - Passwords are used only to construct the login request and are not retained.
 - Access and refresh tokens are held in memory at `client.auth.tokens`.
+- `client.auth.refresh()` rotates the current access and refresh tokens while
+  preserving the account-routing fields returned by login.
 - `client.auth.save_session(path)` can explicitly write those tokens to a
   plaintext JSON session file; it never stores the password.
 - `client.auth.load_session(path)` restores unexpired saved tokens into memory.
@@ -518,7 +523,6 @@ single_attempt_client = ArvanCloud(retry_policy=None)
   `accessToken` and `defaultAccount` values in memory.
 - Token fields are excluded from model representations.
 - Tokens are written to disk only when you explicitly call `save_session(...)`.
-- Refresh is not implemented until the refresh endpoint contract is known.
 - API exceptions do not include request bodies, passwords, or token values.
 
 ## Development

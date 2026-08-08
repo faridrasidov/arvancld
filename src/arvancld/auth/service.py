@@ -7,12 +7,13 @@ import asyncio
 from pathlib import Path
 
 from arvancld._transport import AsyncTransport, SyncTransport
-from arvancld.auth.models import LoginResponse, LoginResult
+from arvancld.auth.models import LoginResponse, LoginResult, RefreshResponse, RefreshResult
 from arvancld.auth.session import clear_session_file, load_session_file, save_session_file
 from arvancld.config import ClientConfig
 from arvancld.exceptions import AuthenticationRequiredError
 
 LOGIN_PATH = "/v1/auth/login"
+REFRESH_PATH = "/v1/auth/refresh-token"
 
 
 def _login_payload(email: str, password: str) -> dict[str, str]:
@@ -21,6 +22,22 @@ def _login_payload(email: str, password: str) -> dict[str, str]:
     if not password:
         raise ValueError("password must not be blank")
     return {"email": email, "password": password}
+
+
+def _refresh_headers(tokens: LoginResult) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {tokens.access_token}.{tokens.default_account}",
+    }
+
+
+def _merge_refreshed_tokens(tokens: LoginResult, refreshed: RefreshResult) -> LoginResult:
+    return tokens.model_copy(
+        update={
+            "access_token": refreshed.access_token,
+            "refresh_token": refreshed.refresh_token,
+            "expires_at": refreshed.expires_at,
+        }
+    )
 
 
 class AuthService:
@@ -49,6 +66,25 @@ class AuthService:
         )
         self._tokens = response.data
         return response.data
+
+    def refresh(self) -> LoginResult:
+        """Rotate the current account tokens and retain the complete session."""
+
+        tokens = self._tokens
+        if tokens is None:
+            raise AuthenticationRequiredError(
+                "A successful login or loaded session is required before refreshing"
+            )
+        response = self._transport.request_model(
+            "POST",
+            self._config.auth_url(REFRESH_PATH),
+            model=RefreshResponse,
+            json={"refreshToken": tokens.refresh_token},
+            headers=_refresh_headers(tokens),
+        )
+        refreshed_tokens = _merge_refreshed_tokens(tokens, response.data)
+        self._tokens = refreshed_tokens
+        return refreshed_tokens
 
     def save_session(self, path: str | Path) -> None:
         """Persist the current login result to an explicit plaintext JSON path."""
@@ -99,6 +135,25 @@ class AsyncAuthService:
         )
         self._tokens = response.data
         return response.data
+
+    async def refresh(self) -> LoginResult:
+        """Rotate the current account tokens and retain the complete session."""
+
+        tokens = self._tokens
+        if tokens is None:
+            raise AuthenticationRequiredError(
+                "A successful login or loaded session is required before refreshing"
+            )
+        response = await self._transport.request_model(
+            "POST",
+            self._config.auth_url(REFRESH_PATH),
+            model=RefreshResponse,
+            json={"refreshToken": tokens.refresh_token},
+            headers=_refresh_headers(tokens),
+        )
+        refreshed_tokens = _merge_refreshed_tokens(tokens, response.data)
+        self._tokens = refreshed_tokens
+        return refreshed_tokens
 
     def save_session(self, path: str | Path) -> None:
         """Persist the current login result to an explicit plaintext JSON path."""

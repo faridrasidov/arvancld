@@ -35,3 +35,28 @@ class LoginResponse(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
 
     data: LoginResult
+
+
+class RefreshResult(BaseModel):
+    """Rotated credentials returned by the token refresh endpoint."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True, populate_by_name=True)
+
+    access_token: str = Field(alias="accessToken", min_length=1, repr=False)
+    refresh_token: str = Field(alias="refreshToken", min_length=1, repr=False)
+    expires_at: datetime = Field(alias="expiresAt")
+
+    @field_validator("expires_at")
+    @classmethod
+    def ensure_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("expiresAt must include a timezone")
+        return value
+
+
+class RefreshResponse(BaseModel):
+    """Envelope returned by the token refresh endpoint."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    data: RefreshResult
