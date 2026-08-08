@@ -34,9 +34,7 @@ def _load_dotenv(path: str | Path = ".env") -> None:
             continue
 
         value = value.strip()
-        if len(value) >= 2 and (
-            (value[0] == value[-1] == '"') or (value[0] == value[-1] == "'")
-        ):
+        if len(value) >= 2 and ((value[0] == value[-1] == '"') or (value[0] == value[-1] == "'")):
             value = value[1:-1]
 
         if name not in os.environ:
