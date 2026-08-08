@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib.util
-import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -10,7 +9,6 @@ from uuid import UUID
 import pytest
 
 from arvancld import InvalidSessionError, SessionExpiredError
-
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
@@ -110,7 +108,7 @@ class FakeClient:
         self.auth = auth
         self.cdn = FakeCdn(records)
 
-    def __enter__(self) -> "FakeClient":
+    def __enter__(self) -> FakeClient:
         return self
 
     def __exit__(self, *_exc: object) -> None:

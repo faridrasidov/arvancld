@@ -89,7 +89,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args = parse_args(argv)
         return run_renew(args)
     except (FileNotFoundError, subprocess.CalledProcessError) as exc:
-        raise SystemExit(str(exc))
+        raise SystemExit(str(exc)) from exc
 
 
 if __name__ == "__main__":
