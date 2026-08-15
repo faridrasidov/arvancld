@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 import random
+import re
 import time
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -17,6 +19,7 @@ from pydantic import BaseModel, ValidationError
 from arvancld.config import ClientConfig, RetryPolicy
 from arvancld.exceptions import (
     APIError,
+    APIValidationIssue,
     ArvanCloudTimeoutError,
     AuthenticationError,
     InvalidResponseError,
@@ -24,6 +27,106 @@ from arvancld.exceptions import (
 )
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
+MAX_RESPONSE_FIELDS = 16
+MAX_VALIDATION_ISSUES = 10
+MAX_LOCATION_SEGMENTS = 8
+MAX_DIAGNOSTIC_TOKEN_LENGTH = 64
+MAX_DIAGNOSTIC_BODY_BYTES = 64 * 1024
+_SAFE_DIAGNOSTIC_TOKEN = re.compile(r"^[A-Za-z_][A-Za-z0-9_.:-]{0,63}$")
+
+
+def _safe_diagnostic_token(value: object) -> str | None:
+    if not isinstance(value, str) or len(value) > MAX_DIAGNOSTIC_TOKEN_LENGTH:
+        return None
+    return value if _SAFE_DIAGNOSTIC_TOKEN.fullmatch(value) else None
+
+
+def _safe_location(value: object) -> tuple[str | int, ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+
+    result: list[str | int] = []
+    for segment in value[:MAX_LOCATION_SEGMENTS]:
+        if isinstance(segment, int) and not isinstance(segment, bool) and segment >= 0:
+            result.append(segment)
+            continue
+        safe_segment = _safe_diagnostic_token(segment)
+        if safe_segment is None:
+            return ()
+        result.append(safe_segment)
+    return tuple(result)
+
+
+def _validation_issues(payload: object) -> tuple[APIValidationIssue, ...]:
+    if not isinstance(payload, dict):
+        return ()
+
+    issues: list[APIValidationIssue] = []
+    detail = payload.get("detail")
+    if isinstance(detail, list):
+        for item in detail:
+            if len(issues) >= MAX_VALIDATION_ISSUES:
+                break
+            if not isinstance(item, dict):
+                continue
+            location = _safe_location(item.get("loc"))
+            error_type = _safe_diagnostic_token(item.get("type"))
+            if location and error_type:
+                issues.append(APIValidationIssue(location, error_type))
+
+    field_errors = payload.get("errors")
+    if not isinstance(field_errors, dict) and isinstance(detail, dict):
+        field_errors = detail
+    if isinstance(field_errors, dict):
+        for field, value in field_errors.items():
+            if len(issues) >= MAX_VALIDATION_ISSUES:
+                break
+            safe_field = _safe_diagnostic_token(field)
+            if safe_field is None:
+                continue
+            error_type = None
+            if isinstance(value, dict):
+                error_type = _safe_diagnostic_token(value.get("type"))
+                if error_type is None:
+                    error_type = _safe_diagnostic_token(value.get("code"))
+            issues.append(APIValidationIssue((safe_field,), error_type or "field_error"))
+
+    return tuple(issues)
+
+
+def _error_diagnostics(response: httpx.Response) -> dict[str, object]:
+    raw_content_type = response.headers.get("content-type", "")
+    content_type = raw_content_type.split(";", 1)[0].strip().lower()
+    safe_content_type = (
+        content_type[:MAX_DIAGNOSTIC_TOKEN_LENGTH]
+        if content_type
+        and all(character.isalnum() or character in "/.+-" for character in content_type)
+        else None
+    )
+    diagnostics: dict[str, object] = {
+        "response_content_type": safe_content_type,
+        "response_size": len(response.content),
+    }
+    if len(response.content) > MAX_DIAGNOSTIC_BODY_BYTES:
+        return diagnostics
+
+    try:
+        payload = json.loads(response.content)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return diagnostics
+    if not isinstance(payload, dict):
+        return diagnostics
+
+    fields: list[str] = []
+    for field in payload:
+        safe_field = _safe_diagnostic_token(field)
+        if safe_field is not None:
+            fields.append(safe_field)
+        if len(fields) >= MAX_RESPONSE_FIELDS:
+            break
+    diagnostics["response_fields"] = tuple(fields)
+    diagnostics["validation_issues"] = _validation_issues(payload)
+    return diagnostics
 
 
 def _retry_after_seconds(value: str, *, now: datetime | None = None) -> float | None:
@@ -91,6 +194,7 @@ def _raise_for_api_error(response: httpx.Response) -> None:
         status_code=response.status_code,
         request_id=response.headers.get("X-Request-Id"),
         message=message,
+        **_error_diagnostics(response),
     )
 
 

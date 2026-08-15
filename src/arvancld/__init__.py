@@ -18,6 +18,7 @@ from arvancld.client import ArvanCloud, AsyncArvanCloud
 from arvancld.config import ClientConfig, RetryPolicy
 from arvancld.exceptions import (
     APIError,
+    APIValidationIssue,
     ArvanCloudError,
     ArvanCloudTimeoutError,
     AuthenticationError,
@@ -34,6 +35,7 @@ __version__ = "0.1.0"
 
 __all__ = [
     "APIError",
+    "APIValidationIssue",
     "ArvanCloud",
     "ArvanCloudError",
     "ArvanCloudTimeoutError",

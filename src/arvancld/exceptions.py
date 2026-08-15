@@ -3,6 +3,16 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class APIValidationIssue:
+    """Bounded validation metadata that never contains provider input values."""
+
+    location: tuple[str | int, ...]
+    error_type: str
+
 
 class ArvanCloudError(Exception):
     """Base class for all arvancld errors."""
@@ -17,9 +27,17 @@ class APIError(ArvanCloudError):
         status_code: int,
         request_id: str | None = None,
         message: str = "ArvanCloud API request failed",
+        response_content_type: str | None = None,
+        response_size: int = 0,
+        response_fields: tuple[str, ...] = (),
+        validation_issues: tuple[APIValidationIssue, ...] = (),
     ) -> None:
         self.status_code = status_code
         self.request_id = request_id
+        self.response_content_type = response_content_type
+        self.response_size = response_size
+        self.response_fields = response_fields
+        self.validation_issues = validation_issues
 
         details = [f"status={status_code}"]
         if request_id:
