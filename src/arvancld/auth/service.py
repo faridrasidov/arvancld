@@ -7,12 +7,20 @@ import asyncio
 from pathlib import Path
 
 from arvancld._transport import AsyncTransport, SyncTransport
-from arvancld.auth.models import LoginResponse, LoginResult, RefreshResponse, RefreshResult
+from arvancld.auth.models import (
+    ChallengeResponse,
+    LoginResponse,
+    LoginResult,
+    RefreshResponse,
+    RefreshResult,
+    TOTPChallenge,
+)
 from arvancld.auth.session import clear_session_file, load_session_file, save_session_file
 from arvancld.config import ClientConfig
-from arvancld.exceptions import AuthenticationRequiredError
+from arvancld.exceptions import AuthenticationRequiredError, TOTPRequiredError
 
 LOGIN_PATH = "/v1/auth/login"
+CHALLENGE_PATH = "/v1/auth/challenge"
 REFRESH_PATH = "/v1/auth/refresh-token"
 
 
@@ -22,6 +30,19 @@ def _login_payload(email: str, password: str) -> dict[str, str]:
     if not password:
         raise ValueError("password must not be blank")
     return {"email": email, "password": password}
+
+
+def _totp_payload(challenge: TOTPChallenge, code: str) -> dict[str, str]:
+    if not isinstance(code, str):
+        raise ValueError("code must contain exactly six ASCII digits")
+    candidate = code.strip()
+    if len(candidate) != 6 or not candidate.isascii() or not candidate.isdecimal():
+        raise ValueError("code must contain exactly six ASCII digits")
+    return {
+        "code": candidate,
+        "flow": challenge.next,
+        "flowToken": challenge.flow_token,
+    }
 
 
 def _refresh_headers(tokens: LoginResult) -> dict[str, str]:
@@ -47,6 +68,7 @@ class AuthService:
         self._transport = transport
         self._config = config
         self._tokens: LoginResult | None = None
+        self._pending_totp: TOTPChallenge | None = None
 
     @property
     def tokens(self) -> LoginResult | None:
@@ -54,9 +76,16 @@ class AuthService:
 
         return self._tokens
 
+    @property
+    def pending_totp(self) -> TOTPChallenge | None:
+        """The current in-memory TOTP challenge, if login requires one."""
+
+        return self._pending_totp
+
     def login(self, email: str, password: str) -> LoginResult:
         """Authenticate an account and retain the returned tokens in memory."""
 
+        self._pending_totp = None
         response = self._transport.request_model(
             "POST",
             self._config.auth_url(LOGIN_PATH),
@@ -64,7 +93,30 @@ class AuthService:
             json=_login_payload(email, password),
             headers={"X-Redirect-Uri": self._config.redirect_uri},
         )
+        result = response.data
+        if isinstance(result, TOTPChallenge):
+            self._pending_totp = result
+            raise TOTPRequiredError("Login requires a time-based one-time-password challenge")
+        self._tokens = result
+        return result
+
+    def submit_totp(self, code: str) -> LoginResult:
+        """Complete the current TOTP challenge and retain the returned tokens."""
+
+        challenge = self._pending_totp
+        if challenge is None:
+            raise AuthenticationRequiredError(
+                "A pending TOTP challenge is required before submitting a code"
+            )
+        response = self._transport.request_model(
+            "POST",
+            self._config.auth_url(CHALLENGE_PATH),
+            model=ChallengeResponse,
+            json=_totp_payload(challenge, code),
+            headers={"X-Redirect-Uri": self._config.redirect_uri},
+        )
         self._tokens = response.data
+        self._pending_totp = None
         return response.data
 
     def refresh(self) -> LoginResult:
@@ -84,6 +136,7 @@ class AuthService:
         )
         refreshed_tokens = _merge_refreshed_tokens(tokens, response.data)
         self._tokens = refreshed_tokens
+        self._pending_totp = None
         return refreshed_tokens
 
     def save_session(self, path: str | Path) -> None:
@@ -100,6 +153,7 @@ class AuthService:
 
         tokens = load_session_file(path)
         self._tokens = tokens
+        self._pending_totp = None
         return tokens
 
     def clear_session(self, path: str | Path) -> None:
@@ -107,6 +161,7 @@ class AuthService:
 
         clear_session_file(path)
         self._tokens = None
+        self._pending_totp = None
 
 
 class AsyncAuthService:
@@ -116,6 +171,7 @@ class AsyncAuthService:
         self._transport = transport
         self._config = config
         self._tokens: LoginResult | None = None
+        self._pending_totp: TOTPChallenge | None = None
 
     @property
     def tokens(self) -> LoginResult | None:
@@ -123,9 +179,16 @@ class AsyncAuthService:
 
         return self._tokens
 
+    @property
+    def pending_totp(self) -> TOTPChallenge | None:
+        """The current in-memory TOTP challenge, if login requires one."""
+
+        return self._pending_totp
+
     async def login(self, email: str, password: str) -> LoginResult:
         """Authenticate an account and retain the returned tokens in memory."""
 
+        self._pending_totp = None
         response = await self._transport.request_model(
             "POST",
             self._config.auth_url(LOGIN_PATH),
@@ -133,7 +196,30 @@ class AsyncAuthService:
             json=_login_payload(email, password),
             headers={"X-Redirect-Uri": self._config.redirect_uri},
         )
+        result = response.data
+        if isinstance(result, TOTPChallenge):
+            self._pending_totp = result
+            raise TOTPRequiredError("Login requires a time-based one-time-password challenge")
+        self._tokens = result
+        return result
+
+    async def submit_totp(self, code: str) -> LoginResult:
+        """Complete the current TOTP challenge and retain the returned tokens."""
+
+        challenge = self._pending_totp
+        if challenge is None:
+            raise AuthenticationRequiredError(
+                "A pending TOTP challenge is required before submitting a code"
+            )
+        response = await self._transport.request_model(
+            "POST",
+            self._config.auth_url(CHALLENGE_PATH),
+            model=ChallengeResponse,
+            json=_totp_payload(challenge, code),
+            headers={"X-Redirect-Uri": self._config.redirect_uri},
+        )
         self._tokens = response.data
+        self._pending_totp = None
         return response.data
 
     async def refresh(self) -> LoginResult:
@@ -153,6 +239,7 @@ class AsyncAuthService:
         )
         refreshed_tokens = _merge_refreshed_tokens(tokens, response.data)
         self._tokens = refreshed_tokens
+        self._pending_totp = None
         return refreshed_tokens
 
     def save_session(self, path: str | Path) -> None:
@@ -179,6 +266,7 @@ class AsyncAuthService:
 
         tokens = load_session_file(path)
         self._tokens = tokens
+        self._pending_totp = None
         return tokens
 
     async def aload_session(self, path: str | Path) -> LoginResult:
@@ -186,6 +274,7 @@ class AsyncAuthService:
 
         tokens = await asyncio.to_thread(load_session_file, path)
         self._tokens = tokens
+        self._pending_totp = None
         return tokens
 
     def clear_session(self, path: str | Path) -> None:
@@ -193,9 +282,11 @@ class AsyncAuthService:
 
         clear_session_file(path)
         self._tokens = None
+        self._pending_totp = None
 
     async def aclear_session(self, path: str | Path) -> None:
         """Clear a saved session without blocking the event loop."""
 
         await asyncio.to_thread(clear_session_file, path)
         self._tokens = None
+        self._pending_totp = None

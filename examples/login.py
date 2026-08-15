@@ -3,17 +3,21 @@
 
 from __future__ import annotations
 
+import getpass
 import os
 
-from arvancld import ArvanCloud
+from arvancld import ArvanCloud, TOTPRequiredError
 
 
 def main() -> None:
     with ArvanCloud() as client:
-        result = client.auth.login(
-            email=os.environ["ARVANCLD_EMAIL"],
-            password=os.environ["ARVANCLD_PASSWORD"],
-        )
+        try:
+            result = client.auth.login(
+                email=os.environ["ARVANCLD_EMAIL"],
+                password=os.environ["ARVANCLD_PASSWORD"],
+            )
+        except TOTPRequiredError:
+            result = client.auth.submit_totp(getpass.getpass("TOTP code: "))
 
         print(f"Default account: {result.default_account}")
         print(f"Access token expires at: {result.expires_at.isoformat()}")

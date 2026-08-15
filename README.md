@@ -19,7 +19,8 @@ between local runs.
 
 - Typed sync client: `ArvanCloud`
 - Typed async client: `AsyncArvanCloud`
-- Account login and token refresh through `dejban.arvancloud.ir`
+- Account login, TOTP challenge completion, and token refresh through
+  `dejban.arvancloud.ir`
 - Explicit JSON session persistence for local token reuse
 - ArvanCloud CDN v4.0 domain listing
 - ArvanCloud CDN DNS record listing with pagination, type filters, search, and
@@ -32,7 +33,7 @@ between local runs.
 
 | SDK area | API host | Implemented operations |
 | --- | --- | --- |
-| Account auth | `https://dejban.arvancloud.ir` | Login, token refresh |
+| Account auth | `https://dejban.arvancloud.ir` | Login, TOTP challenge, token refresh |
 | CDN v4.0 | `https://napi.arvancloud.ir/cdn/4.0` | List domains |
 | CDN v4.0 DNS records | `https://napi.arvancloud.ir/cdn/4.0` | List, search, create, update, delete, cloud proxy toggle |
 
@@ -143,6 +144,11 @@ python examples/certbot_arvancld_dns_hook.py --mode cleanup
 `CERTBOT_DOMAIN` and `CERTBOT_VALIDATION` are expected by the hook and passed by
 Certbot automatically during challenge handling.
 
+The Certbot hook never prompts for a TOTP code. For an MFA-enabled account,
+create a valid saved session interactively before running unattended Certbot
+automation. If password login reaches an MFA challenge without a valid saved
+session, the hook fails with `TOTPRequiredError`.
+
 Issue certificates:
 
 ```bash
@@ -162,21 +168,32 @@ python examples/renew_ssl.py --deploy-hook "python examples/certbot_arvancld_dns
 ## Quickstart: login and list CDN domains
 
 ```python
+import getpass
 import os
 
-from arvancld import ArvanCloud
+from arvancld import ArvanCloud, TOTPRequiredError
 
 with ArvanCloud() as client:
-    result = client.auth.login(
-        email=os.environ["ARVANCLD_EMAIL"],
-        password=os.environ["ARVANCLD_PASSWORD"],
-    )
+    try:
+        result = client.auth.login(
+            email=os.environ["ARVANCLD_EMAIL"],
+            password=os.environ["ARVANCLD_PASSWORD"],
+        )
+    except TOTPRequiredError:
+        result = client.auth.submit_totp(getpass.getpass("TOTP code: "))
+
     print(result.default_account)
 
     domains = client.cdn.domains.list(page=1, per_page=5)
     for domain in domains.data:
         print(domain.domain, domain.status)
 ```
+
+The SDK never prompts internally. When login requires TOTP, it keeps a
+`TOTPChallenge` only in `client.auth.pending_totp`, leaves any active tokens
+unchanged, and raises `TOTPRequiredError`. Pass the user-supplied code to
+`submit_totp()` to finish login. Starting another login replaces the pending
+challenge; completed session files never contain a code or flow token.
 
 ## Reuse an ArvanCloud login session
 
@@ -192,10 +209,16 @@ already expired locally, loading still raises `SessionExpiredError` and you
 should log in again.
 
 ```python
+import getpass
 import os
 from pathlib import Path
 
-from arvancld import ArvanCloud, InvalidSessionError, SessionExpiredError
+from arvancld import (
+    ArvanCloud,
+    InvalidSessionError,
+    SessionExpiredError,
+    TOTPRequiredError,
+)
 
 session_path = Path(os.environ.get("ARVANCLD_SESSION", ".arvancld-session.json"))
 
@@ -203,10 +226,13 @@ with ArvanCloud() as client:
     try:
         client.auth.load_session(session_path)
     except (FileNotFoundError, InvalidSessionError, SessionExpiredError):
-        client.auth.login(
-            email=os.environ["ARVANCLD_EMAIL"],
-            password=os.environ["ARVANCLD_PASSWORD"],
-        )
+        try:
+            client.auth.login(
+                email=os.environ["ARVANCLD_EMAIL"],
+                password=os.environ["ARVANCLD_PASSWORD"],
+            )
+        except TOTPRequiredError:
+            client.auth.submit_totp(getpass.getpass("TOTP code: "))
         client.auth.save_session(session_path)
 
     domains = client.cdn.domains.list()
@@ -220,10 +246,16 @@ filesystem work off the event loop:
 
 ```python
 import asyncio
+import getpass
 import os
 from pathlib import Path
 
-from arvancld import AsyncArvanCloud, InvalidSessionError, SessionExpiredError
+from arvancld import (
+    AsyncArvanCloud,
+    InvalidSessionError,
+    SessionExpiredError,
+    TOTPRequiredError,
+)
 
 
 async def main() -> None:
@@ -233,10 +265,13 @@ async def main() -> None:
         try:
             await client.auth.aload_session(session_path)
         except (FileNotFoundError, InvalidSessionError, SessionExpiredError):
-            await client.auth.login(
-                email=os.environ["ARVANCLD_EMAIL"],
-                password=os.environ["ARVANCLD_PASSWORD"],
-            )
+            try:
+                await client.auth.login(
+                    email=os.environ["ARVANCLD_EMAIL"],
+                    password=os.environ["ARVANCLD_PASSWORD"],
+                )
+            except TOTPRequiredError:
+                await client.auth.submit_totp(getpass.getpass("TOTP code: "))
             await client.auth.asave_session(session_path)
 
         domains = await client.cdn.domains.list()
@@ -445,17 +480,21 @@ with ArvanCloud() as client:
 
 ```python
 import asyncio
+import getpass
 import os
 
-from arvancld import AsyncArvanCloud
+from arvancld import AsyncArvanCloud, TOTPRequiredError
 
 
 async def main() -> None:
     async with AsyncArvanCloud() as client:
-        await client.auth.login(
-            email=os.environ["ARVANCLD_EMAIL"],
-            password=os.environ["ARVANCLD_PASSWORD"],
-        )
+        try:
+            await client.auth.login(
+                email=os.environ["ARVANCLD_EMAIL"],
+                password=os.environ["ARVANCLD_PASSWORD"],
+            )
+        except TOTPRequiredError:
+            await client.auth.submit_totp(getpass.getpass("TOTP code: "))
 
         domains = await client.cdn.domains.list(page=1, per_page=5)
         print(f"Domains: {domains.meta.total}")
@@ -510,6 +549,8 @@ single_attempt_client = ArvanCloud(retry_policy=None)
 
 - Passwords are used only to construct the login request and are not retained.
 - Access and refresh tokens are held in memory at `client.auth.tokens`.
+- A pending TOTP challenge is held only in memory at
+  `client.auth.pending_totp`; its flow token is redacted from representations.
 - `client.auth.refresh()` rotates the current access and refresh tokens while
   preserving the account-routing fields returned by login.
 - `client.auth.save_session(path)` can explicitly write those tokens to a
@@ -523,6 +564,7 @@ single_attempt_client = ArvanCloud(retry_policy=None)
   `accessToken` and `defaultAccount` values in memory.
 - Token fields are excluded from model representations.
 - Tokens are written to disk only when you explicitly call `save_session(...)`.
+- TOTP codes and challenge flow tokens are never written to session files.
 - API exceptions do not include request bodies, passwords, or token values.
 
 ## Development

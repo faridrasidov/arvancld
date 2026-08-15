@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -29,8 +30,26 @@ class LoginResult(BaseModel):
         return value
 
 
+class TOTPChallenge(BaseModel):
+    """Pending time-based one-time-password challenge returned by login."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True, populate_by_name=True)
+
+    flow: str = Field(min_length=1)
+    next: Literal["ChallengeTOTPPossession"]
+    flow_token: str = Field(alias="flowToken", min_length=1, repr=False)
+
+
 class LoginResponse(BaseModel):
     """Envelope returned by the account login endpoint."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    data: LoginResult | TOTPChallenge
+
+
+class ChallengeResponse(BaseModel):
+    """Envelope returned after a successful authentication challenge."""
 
     model_config = ConfigDict(extra="ignore", frozen=True)
 

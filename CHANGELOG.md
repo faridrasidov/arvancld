@@ -8,6 +8,7 @@ All notable changes to `arvancld` will be documented in this file.
 
 - Synchronous and asynchronous `ArvanCloud` clients.
 - Account login support with typed token and account metadata parsing.
+- Two-step TOTP login challenge support for synchronous and asynchronous clients.
 - Explicit JSON session persistence with opt-in `save_session`, `load_session`, and `clear_session`.
 - CDN domain listing support.
 - CDN DNS record listing support.

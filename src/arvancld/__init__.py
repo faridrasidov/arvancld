@@ -1,7 +1,7 @@
 # src/arvancld/__init__.py
 """Public package interface for arvancld."""
 
-from arvancld.auth import LoginResult, StoredSession
+from arvancld.auth import LoginResult, StoredSession, TOTPChallenge
 from arvancld.cdn import (
     CDNDomain,
     CDNDomainPage,
@@ -27,6 +27,7 @@ from arvancld.exceptions import (
     NetworkError,
     SessionError,
     SessionExpiredError,
+    TOTPRequiredError,
 )
 
 __version__ = "0.1.0"
@@ -58,5 +59,7 @@ __all__ = [
     "SessionError",
     "SessionExpiredError",
     "StoredSession",
+    "TOTPChallenge",
+    "TOTPRequiredError",
     "__version__",
 ]

@@ -35,6 +35,10 @@ class AuthenticationRequiredError(ArvanCloudError):
     """A request requires a prior successful login."""
 
 
+class TOTPRequiredError(AuthenticationRequiredError):
+    """Login requires a pending TOTP challenge to be completed."""
+
+
 class SessionError(ArvanCloudError):
     """A local saved session could not be read, written, or cleared."""
 
